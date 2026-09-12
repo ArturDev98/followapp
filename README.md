@@ -67,7 +67,15 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | S2 | Almacenamiento, diff y cruce | ✅ hecho |
 | S3 | Scheduler | ✅ hecho |
 | S4 | Popup: el MVP local | ✅ hecho |
-| S5 | Backend y cuentas | siguiente |
+| — | **Enviada a la Chrome Web Store** | ⏳ v1.0.0 en revisión desde el 12 sep 2026 |
+| S5 | Backend y cuentas | a la espera del veredicto |
+
+Se envió **no listada**: pasa la revisión completa y se instala por enlace, pero
+no aparece en búsquedas. La revisión es la única incógnita que no depende de
+nosotros, y por eso va antes que el backend: un rechazo ahora cuesta días, y
+después de construir S5, S6 y S7 costaría semanas de trabajo en el aire.
+
+Política de privacidad: <https://arturdev98.github.io/followapp/>
 
 ### S0 — Contexto de ejecución (resuelto)
 
