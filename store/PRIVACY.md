@@ -63,8 +63,7 @@ indicará en la fecha de arriba.
 
 ## Contacto
 
-<!-- Sustituir por tu correo antes de publicar. -->
-`TU-CORREO@ejemplo.com`
+<aygsjf@gmail.com>
 
 ---
 
@@ -131,5 +130,4 @@ above will reflect it.
 
 ## Contact
 
-<!-- Replace with your email before publishing. -->
-`YOUR-EMAIL@example.com`
+<aygsjf@gmail.com>
