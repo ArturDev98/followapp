@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "FollowApp — Instagram unfollower tracker",
+    "description": "Extension name shown in the Chrome Web Store."
+  },
+  "appDesc": {
+    "message": "See who unfollowed you on Instagram. No password, no data export, nothing leaves your browser.",
+    "description": "Short description shown in the Chrome Web Store."
+  }
+}

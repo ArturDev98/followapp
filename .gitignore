@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# Capturas: las crudas son del equipo de cada uno y las montadas se regeneran.
+store/crudas/
+store/capturas/
+
+# Los paquetes se generan con `npm run package`, no se versionan.
+store/*.zip

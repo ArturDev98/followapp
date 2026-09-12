@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "FollowApp — quién te dejó de seguir",
+    "description": "Nombre de la extensión en la Chrome Web Store."
+  },
+  "appDesc": {
+    "message": "Descubre quién te dejó de seguir en Instagram. Sin contraseña, sin ZIP y sin que nada salga de tu navegador.",
+    "description": "Descripción corta en la Chrome Web Store."
+  }
+}

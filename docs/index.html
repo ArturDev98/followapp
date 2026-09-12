@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacidad · FollowApp</title>
+<meta name="description" content="FollowApp no recoge, no transmite y no almacena ningún dato en servidores.">
+<link rel="icon" href="icon128.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #0E161C;
+    --surface: #16212A;
+    --rule: #2C3B45;
+    --ink: #E8EFF3;
+    --ink-soft: #B9CAD4;
+    --muted: #7D919D;
+    --accent: #4FC7D1;
+    --ok: #6FBE8C;
+    --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Source Serif 4', Georgia, serif;
+    --mono: 'JetBrains Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px 80px; }
+
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 32px 0 22px; border-bottom: 1px solid var(--rule);
+  }
+  header img { width: 44px; height: 44px; border-radius: 10px; }
+  header .who { flex: 1; min-width: 0; }
+  header h1 {
+    font-family: var(--display); font-size: 19px; font-weight: 600;
+    margin: 0; letter-spacing: -0.01em;
+  }
+  header p { margin: 0; font-size: 13px; color: var(--muted); }
+
+  .langs { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; }
+  .langs button {
+    background: none; border: 0; padding: 6px 12px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .langs button.on { background: var(--accent); color: #06222A; font-weight: 500; }
+  .langs button:not(.on):hover { color: var(--ink); }
+
+  h2 {
+    font-family: var(--display); font-weight: 600; font-size: 15px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--accent); margin: 44px 0 10px;
+  }
+
+  h3 {
+    font-family: var(--display); font-weight: 600; font-size: 17px;
+    margin: 28px 0 8px;
+  }
+
+  p { margin: 0 0 16px; }
+  strong { font-weight: 600; }
+
+  .lead {
+    font-size: 21px; line-height: 1.5; color: var(--ink);
+    border-left: 3px solid var(--ok); padding-left: 18px; margin: 30px 0;
+  }
+
+  .updated { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 18px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 18px 0; }
+  th {
+    font-family: var(--display); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted);
+    text-align: left; padding: 0 14px 9px 0; border-bottom: 1px solid var(--rule);
+  }
+  td { padding: 11px 14px 11px 0; border-bottom: 1px solid #1E2B34; vertical-align: top; }
+  td code { font-family: var(--mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; }
+
+  .tw { overflow-x: auto; }
+
+  footer {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-size: 13.5px; color: var(--muted);
+  }
+  a { color: var(--accent); }
+
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <img src="icon128.png" alt="">
+    <div class="who">
+      <h1>FollowApp</h1>
+      <p data-es="Política de privacidad" data-en="Privacy Policy">Política de privacidad</p>
+    </div>
+    <div class="langs">
+      <button type="button" id="b-es" class="on">ES</button>
+      <button type="button" id="b-en">EN</button>
+    </div>
+  </header>
+
+  <!-- ─────────────── ESPAÑOL ─────────────── -->
+  <main id="es">
+    <p class="lead">
+      FollowApp <strong>no recoge, no transmite y no almacena ningún dato en
+      servidores</strong>. No hay servidores. Todo ocurre dentro de tu navegador.
+    </p>
+    <p class="updated">Última actualización: 12 de septiembre de 2026</p>
+
+    <h2>Qué datos maneja</h2>
+    <p>
+      Para decirte quién te dejó de seguir, FollowApp lee tus listas de
+      seguidores y seguidos de Instagram usando <strong>la sesión que ya tienes
+      abierta</strong> en el navegador. De cada cuenta guarda su identificador,
+      su nombre de usuario, su nombre visible y su foto de perfil.
+    </p>
+    <p>
+      También guarda cuándo se hizo cada revisión, y tus preferencias de idioma
+      e intervalo.
+    </p>
+
+    <h2>Dónde se guarda</h2>
+    <p>
+      En <strong>IndexedDB</strong>, el almacenamiento local de tu navegador, en
+      tu propio equipo.
+    </p>
+    <p>
+      No se envía a ninguna parte. No hay analítica, ni telemetría, ni informes
+      de errores, ni identificadores publicitarios. La extensión no se comunica
+      con ningún servidor nuestro porque no existe ninguno.
+    </p>
+
+    <h3>Tu contraseña</h3>
+    <p>
+      <strong>FollowApp nunca te pide la contraseña de Instagram y nunca la
+      ve.</strong> Usa la sesión que tu navegador ya tiene iniciada, igual que
+      cuando abres Instagram en una pestaña.
+    </p>
+
+    <h2>Permisos y por qué</h2>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Permiso</th><th>Para qué</th></tr></thead>
+        <tbody>
+          <tr><td><code>cookies</code></td><td>Leer tu identificador de sesión de Instagram para saber de qué cuenta hablamos. Nunca se transmite.</td></tr>
+          <tr><td><code>storage</code></td><td>Guardar tus preferencias y el estado de las revisiones.</td></tr>
+          <tr><td><code>alarms</code></td><td>Programar la revisión periódica en segundo plano.</td></tr>
+          <tr><td><code>www.instagram.com</code></td><td>Leer tus listas de seguidores y seguidos.</td></tr>
+          <tr><td><code>*.cdninstagram.com</code><br><code>*.fbcdn.net</code></td><td>Descargar las fotos de perfil para mostrarlas.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Terceros</h2>
+    <p>
+      Ninguno. La extensión solo se comunica con Instagram y su red de
+      imágenes, que es a donde irían esas mismas peticiones si navegaras tú.
+    </p>
+
+    <h2>Borrar tus datos</h2>
+    <p>
+      Desinstalar la extensión borra todo lo guardado. También puedes borrarlo
+      sin desinstalar: haz tres clics sobre el nombre «FollowApp» en la ventana
+      de la extensión y pulsa <strong>borrar historial</strong>.
+    </p>
+
+    <h2>Menores</h2>
+    <p>FollowApp no está dirigida a menores de 13 años.</p>
+
+    <h2>Cambios</h2>
+    <p>
+      Si esta política cambia, la versión actualizada se publicará aquí y se
+      reflejará en la fecha de arriba.
+    </p>
+
+    <h2>Contacto</h2>
+    <p><a href="mailto:CORREO@EJEMPLO.COM">CORREO@EJEMPLO.COM</a></p>
+  </main>
+
+  <!-- ─────────────── ENGLISH ─────────────── -->
+  <main id="en" hidden>
+    <p class="lead">
+      FollowApp <strong>collects nothing, transmits nothing and stores nothing
+      on servers</strong>. There are no servers. Everything happens inside your
+      browser.
+    </p>
+    <p class="updated">Last updated: September 12, 2026</p>
+
+    <h2>What it handles</h2>
+    <p>
+      To tell you who unfollowed you, FollowApp reads your Instagram followers
+      and following lists using <strong>the session already open</strong> in
+      your browser. For each account it stores the account id, username,
+      display name and profile picture.
+    </p>
+    <p>
+      It also stores when each check ran, plus your language and interval
+      settings.
+    </p>
+
+    <h2>Where it is stored</h2>
+    <p>
+      In <strong>IndexedDB</strong>, your browser's local storage, on your own
+      device.
+    </p>
+    <p>
+      Nothing is sent anywhere. No analytics, no telemetry, no crash reporting,
+      no advertising identifiers. The extension talks to no server of ours
+      because none exists.
+    </p>
+
+    <h3>Your password</h3>
+    <p>
+      <strong>FollowApp never asks for your Instagram password and never sees
+      it.</strong> It uses the session your browser already has, the same one
+      you use when you open Instagram in a tab.
+    </p>
+
+    <h2>Permissions and why</h2>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Permission</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><code>cookies</code></td><td>Read your Instagram session id to know which account we are talking about. Never transmitted.</td></tr>
+          <tr><td><code>storage</code></td><td>Save your settings and the state of the checks.</td></tr>
+          <tr><td><code>alarms</code></td><td>Schedule the periodic background check.</td></tr>
+          <tr><td><code>www.instagram.com</code></td><td>Read your followers and following lists.</td></tr>
+          <tr><td><code>*.cdninstagram.com</code><br><code>*.fbcdn.net</code></td><td>Download profile pictures to display them.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Third parties</h2>
+    <p>
+      None. The extension only talks to Instagram and its image network — the
+      same requests your browser would make if you browsed there yourself.
+    </p>
+
+    <h2>Deleting your data</h2>
+    <p>
+      Uninstalling the extension removes everything. You can also clear it
+      without uninstalling: triple-click the "FollowApp" name in the extension
+      window and press <strong>wipe history</strong>.
+    </p>
+
+    <h2>Children</h2>
+    <p>FollowApp is not directed at children under 13.</p>
+
+    <h2>Changes</h2>
+    <p>
+      If this policy changes, the updated version will be published here and
+      the date above will reflect it.
+    </p>
+
+    <h2>Contact</h2>
+    <p><a href="mailto:CORREO@EJEMPLO.COM">CORREO@EJEMPLO.COM</a></p>
+  </main>
+
+  <footer>
+    <p data-es="El código de FollowApp es abierto: puedes comprobar tú mismo todo lo que dice esta página."
+       data-en="FollowApp is open source: you can verify everything on this page yourself.">
+      El código de FollowApp es abierto: puedes comprobar tú mismo todo lo que dice esta página.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  const bEs = document.getElementById('b-es');
+  const bEn = document.getElementById('b-en');
+
+  function set(lang) {
+    document.getElementById('es').hidden = lang !== 'es';
+    document.getElementById('en').hidden = lang !== 'en';
+    bEs.classList.toggle('on', lang === 'es');
+    bEn.classList.toggle('on', lang === 'en');
+    document.documentElement.lang = lang;
+    document.title = lang === 'es' ? 'Privacidad · FollowApp' : 'Privacy · FollowApp';
+    for (const el of document.querySelectorAll('[data-es]')) el.textContent = el.dataset[lang];
+    location.hash = lang;
+  }
+
+  bEs.addEventListener('click', () => set('es'));
+  bEn.addEventListener('click', () => set('en'));
+
+  // El idioma del navegador decide, salvo que la URL diga otra cosa.
+  const pedido = location.hash.replace('#', '');
+  set(pedido === 'en' || pedido === 'es' ? pedido : (navigator.language || 'es').startsWith('es') ? 'es' : 'en');
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "followapp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Saber quien te dejo de seguir en Instagram, sin contrasena y sin ZIP.",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "npm run build:popup && npm run build:sw",
+    "build:content": "vite build --config vite.content.config.ts",
+    "dev": "npm run build -- --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build:popup": "vite build",
+    "build:sw": "vite build --config vite.sw.config.ts",
+    "package": "npm run build && python scripts/empaquetar.py"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.20.2",
+    "typescript": "^5.7.2",
+    "vite": "^7.0.0"
+  }
+}
