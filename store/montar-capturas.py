@@ -28,7 +28,7 @@ TARJETAS = [
     ("actividad.png", "Sabes quién se fue", "Con su nombre, su foto y cuándo pasó."),
     ("nosiguen.png", "Y quién no te corresponde", "Las cuentas que sigues y no te siguen."),
     ("revisando.png", "Trabaja sola", "Revisa en segundo plano cada pocas horas."),
-    ("vacio.png", "Empieza el primer día", "La primera revisión guarda la referencia."),
+    ("bienvenida.png", "Empieza con un clic", "Nada que configurar: usa la sesión que ya tienes."),
     ("ingles.png", "English and Spanish", "Switch languages whenever you like."),
 ]
 

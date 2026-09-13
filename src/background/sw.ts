@@ -7,6 +7,7 @@ import {
   enable,
   getState,
   isBusy,
+  requireSession,
   setBusy,
   tick,
 } from '../lib/scheduler';
@@ -30,12 +31,14 @@ async function runTick(force: boolean): Promise<TickResponse> {
   }
 
   await setBusy(true);
-  broadcast({ kind: 'tick-start', force });
 
   let result: TickResponse;
   try {
     const r = await tick({
       force,
+      // Lo anuncia el scheduler cuando pasa sus cortes, no antes: sin sesión
+      // no hay revisión, y pintar "Revisando…" seria mentir.
+      onStart: () => broadcast({ kind: 'tick-start', force }),
       onProgress: (progress) => broadcast({ kind: 'progress', progress }),
     });
     result = {
@@ -62,9 +65,19 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   void runTick(false);
 });
 
+/**
+ * Con la vigilancia apagada no pasa nada nunca, y eso no se ve desde fuera.
+ * El aviso en el icono lo dice sin necesidad de abrir el popup.
+ */
+async function syncBadge(enabled: boolean): Promise<void> {
+  await chrome.action.setBadgeText({ text: enabled ? '' : '!' });
+  if (!enabled) await chrome.action.setBadgeBackgroundColor({ color: '#D6A550' });
+}
+
 /** Al instalar o al arrancar Chrome, reponer la alarma si estaba activa. */
 async function restore(): Promise<void> {
   const s = await getState();
+  await syncBadge(s.enabled);
   if (!s.enabled) return;
   const existing = await chrome.alarms.get(ALARM_POLL);
   if (!existing) await enable();
@@ -78,6 +91,20 @@ chrome.runtime.onStartup.addListener(() => void restore());
 /** Un codigo, no un texto: el idioma lo decide el popup. */
 function problemaDe(state: Awaited<ReturnType<typeof getState>>): ProblemCode {
   if (!state.blockedUntil || state.blockedUntil <= Date.now()) return null;
+
+  switch (state.blockedKind) {
+    case 'auth':
+      return 'no-session';
+    case 'hard':
+      return 'hard-block';
+    case 'soft':
+      return 'soft-block';
+    default:
+      break;
+  }
+
+  // Estado escrito por la 1.0.0, que no guardaba la clase: leer el motivo es
+  // lo unico que queda. Se cae solo en cuanto caduque esa espera.
   const r = state.blockedReason ?? '';
   if (r.includes('sesión')) return 'no-session';
   if (r.includes('duro')) return 'hard-block';
@@ -126,13 +153,28 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
       return true;
 
     case 'watch':
-      (msg.on ? enable(msg.minutes) : disable()).then((state) => sendResponse({ state }));
+      (msg.on ? enable(msg.minutes) : disable()).then(async (state) => {
+        // Encender sin sesión dejaba el interruptor en verde con una cuenta
+        // atrás que no significaba nada. Comprobarlo aquí no cuesta ni una
+        // petición, y el popup ya puede explicarlo en el momento.
+        const s = msg.on && !(await requireSession()) ? await getState() : state;
+        await syncBadge(s.enabled);
+        sendResponse({ state: s });
+      });
       return true;
 
     case 'wipe':
-      wipe()
-        .then(() => chrome.alarms.clear(ALARM_RESUME))
-        .then(() => sendResponse({ ok: true }));
+      // wipe() vacia tambien el estado del scheduler, pero la alarma sobrevive:
+      // sin reponerlo seguiria capturando con el interruptor en apagado.
+      void (async () => {
+        const antes = await getState();
+        await wipe();
+        await chrome.alarms.clear(ALARM_RESUME);
+        if (antes.enabled) await enable(antes.pollMinutes);
+        else await chrome.alarms.clear(ALARM_POLL);
+        await syncBadge(antes.enabled);
+        sendResponse({ ok: true });
+      })();
       return true;
 
     default:

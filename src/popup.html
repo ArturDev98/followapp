@@ -184,6 +184,13 @@
     .empty { padding: 28px 22px; text-align: center; color: var(--muted); font-size: 12.5px; }
     .empty strong { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 5px; font-weight: 600; }
 
+    /* Primera apertura: sin esto la extension se queda apagada para siempre. */
+    .welcome { padding: 26px 22px 22px; text-align: center; }
+    .welcome strong { display: block; color: var(--ink); font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+    .welcome p { margin: 0 0 16px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.55; }
+    .welcome .fine { margin: 14px 0 0; color: var(--muted); font-size: 11px; }
+    .welcome button { padding: 9px 20px; font-size: 13px; }
+
     /* Aviso de hueco: informa sin alarmar, que no es un error. */
     .gap {
       margin: 0; padding: 7px 16px;
@@ -196,6 +203,22 @@
       margin: 10px 16px; padding: 9px 11px; border-radius: 4px;
       background: #33280F; color: var(--unk); font-size: 12px;
     }
+
+    /* El diagnostico sale solo cuando hace falta: quien mas lo necesita es
+       justo quien no va a buscarlo detras de tres clics. */
+    .alert {
+      margin: 10px 16px 2px; padding: 10px 12px; border-radius: 4px;
+      background: #33280F; border: 1px solid #4A3A16;
+    }
+    .alert p { margin: 0 0 5px; color: var(--unk); font-size: 12px; line-height: 1.45; }
+    .alert .hint { margin: 0 0 9px; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+    .alert button {
+      background: none; border: 1px solid var(--unk); border-radius: 3px;
+      color: var(--unk); font-family: var(--sans); font-size: 11px; font-weight: 600;
+      padding: 4px 10px; cursor: pointer;
+    }
+    .alert button:hover { background: var(--unk); color: #33280F; }
+    
 
     /* ---------------- pie ---------------- */
 
@@ -215,6 +238,9 @@
       background: var(--muted); margin-right: 6px; vertical-align: middle;
     }
     .status.on .dot { background: var(--ok); }
+    /* Apagada con historial detras: es un aviso, no un estado neutro. */
+    .status.off { color: var(--unk); }
+    .status.off .dot { background: var(--unk); }
     .status.run .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: 0.25; } }
 
@@ -271,6 +297,8 @@
       color: var(--muted); font-size: 10.5px; padding: 3px 8px; cursor: pointer;
     }
     .diag .row button:hover { color: var(--bad); border-color: var(--bad); }
+    .diag .row button.copy:hover { color: var(--accent); border-color: var(--accent); }
+    .diag .fine { margin: 6px 0 0; color: var(--muted); font-size: 9.5px; }
   </style>
 </head>
 <body>
@@ -299,6 +327,11 @@
       <span class="spin"></span>
       <span id="loading-text"></span>
       <span class="n" id="loading-n"></span>
+    </div>
+    <div class="alert" id="alert" hidden>
+      <p id="alert-text"></p>
+      <p class="hint" id="alert-hint"></p>
+      <button type="button" id="alert-copy"></button>
     </div>
     <div class="pane" id="actividad" role="tabpanel"></div>
     <div class="pane" id="sincorresponder" role="tabpanel" hidden></div>

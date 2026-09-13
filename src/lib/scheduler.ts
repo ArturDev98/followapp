@@ -1,4 +1,4 @@
-import { readUserId } from './http';
+import { readUserId, type Severity } from './http';
 import { captureCounts, captureList } from './capture';
 import { appendSnapshot, saveProfiles } from './snapshots';
 import { getMeta, setMeta } from './db';
@@ -43,6 +43,13 @@ export interface Pending {
   chunks: number;
 }
 
+/**
+ * Un bloqueo por sesión no es como uno por ritmo: reintentar sin sesión no
+ * cuesta ni una petición, y reintentar tras un 429 es justo lo que no hay
+ * que hacer. El botón de revisar los trata distinto.
+ */
+export type BlockKind = 'auth' | 'soft' | 'hard';
+
 export interface SchedulerState {
   enabled: boolean;
   /** Minutos entre polls. Ver POLL_CHOICES. */
@@ -53,6 +60,11 @@ export interface SchedulerState {
   /** Hasta cuando no se toca nada, tras un bloqueo. */
   blockedUntil: number | null;
   blockedReason: string | null;
+  /**
+   * De qué clase es la espera. Sin esto hay que adivinarla leyendo el texto
+   * del motivo, que además está traducido.
+   */
+  blockedKind: BlockKind | null;
   pending: Pending | null;
   /** Linea base de latencia, heredada entre tandas. */
   baseline: number | null;
@@ -74,6 +86,7 @@ const EMPTY: SchedulerState = {
   lastSweepAt: null,
   blockedUntil: null,
   blockedReason: null,
+  blockedKind: null,
   pending: null,
   baseline: null,
   log: [],
@@ -126,22 +139,51 @@ export async function disable(): Promise<SchedulerState> {
   return save({ enabled: false });
 }
 
+/**
+ * Devuelve el id del usuario, o deja la espera apuntada si no hay sesion.
+ * No gasta ni una peticion: es leer una cookie. Encender la vigilancia
+ * promete revisar, asi que quien lo promete comprueba primero que puede.
+ */
+export async function requireSession(): Promise<string | null> {
+  const id = await readUserId();
+  if (id) return id;
+
+  await save({
+    blockedUntil: Date.now() + COOLDOWN_SOFT_MS,
+    blockedReason: 'sin sesión de Instagram',
+    blockedKind: 'auth',
+  });
+  await log('Sin sesión de Instagram: no se puede capturar', 'warn');
+  return null;
+}
+
 async function scheduleResume(): Promise<void> {
   await chrome.alarms.create(ALARM_RESUME, { delayInMinutes: RESUME_MINUTES });
 }
 
 /** Traduce un motivo de parada a espera, o null si no hay que esperar. */
-function cooldownFor(reason: StopReason): { ms: number; text: string } | null {
+function cooldownFor(reason: StopReason): { ms: number; text: string; kind: BlockKind } | null {
   switch (reason) {
     case 'soft-block':
-      return { ms: COOLDOWN_SOFT_MS, text: 'Instagram pidió esperar' };
+      return { ms: COOLDOWN_SOFT_MS, text: 'Instagram pidió esperar', kind: 'soft' };
     case 'hard-block':
-      return { ms: COOLDOWN_HARD_MS, text: 'bloqueo duro: abre la app oficial de Instagram' };
+      return {
+        ms: COOLDOWN_HARD_MS,
+        text: 'bloqueo duro: abre la app oficial de Instagram',
+        kind: 'hard',
+      };
     case 'auth':
-      return { ms: COOLDOWN_SOFT_MS, text: 'sin sesión de Instagram' };
+      return { ms: COOLDOWN_SOFT_MS, text: 'sin sesión de Instagram', kind: 'auth' };
     default:
       return null;
   }
+}
+
+/** Lo mismo para el poll, que responde con gravedad en vez de con motivo. */
+function cooldownForSeverity(s: Severity): { ms: number; kind: BlockKind } {
+  if (s === 'auth') return { ms: COOLDOWN_SOFT_MS, kind: 'auth' };
+  if (s === 'hard') return { ms: COOLDOWN_HARD_MS, kind: 'hard' };
+  return { ms: COOLDOWN_SOFT_MS, kind: 'soft' };
 }
 
 // ---------------------------------------------------------- reconciliacion
@@ -201,6 +243,11 @@ export interface TickOpts {
   /** Ignora contadores y barre las dos listas. Lo usa el boton "Capturar ya". */
   force?: boolean;
   onProgress?: ((p: CaptureProgress) => void) | undefined;
+  /**
+   * Se llama cuando la revisión va a empezar de verdad, después de los
+   * cortes. Anunciarla antes pinta un «Revisando…» que no ocurre.
+   */
+  onStart?: (() => void) | undefined;
 }
 
 /**
@@ -211,17 +258,27 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   const state = await getState();
   const now = Date.now();
 
-  if (state.blockedUntil && state.blockedUntil > now && !opts.force) {
+  // Forzar salta la espera solo si era por sesión: reintentar sin sesión no
+  // cuesta una petición, pero reintentar tras un 429 es lo contrario de parar.
+  const saltable = opts.force && state.blockedKind === 'auth';
+  if (state.blockedUntil && state.blockedUntil > now && !saltable) {
     const mins = Math.ceil((state.blockedUntil - now) / 60000);
     return { ran: false, skipped: `en espera ${mins} min · ${state.blockedReason ?? ''}`, requests: 0, enumerated: [], state };
   }
 
-  const userId = await readUserId();
+  const userId = await requireSession();
   if (!userId) {
-    const s = await save({ blockedUntil: now + COOLDOWN_SOFT_MS, blockedReason: 'sin sesión de Instagram' });
-    await log('Sin sesión de Instagram: no se puede capturar', 'warn');
-    return { ran: false, skipped: 'sin sesión', requests: 0, enumerated: [], state: s };
+    return {
+      ran: false,
+      skipped: 'sin sesión',
+      requests: 0,
+      enumerated: [],
+      state: await getState(),
+    };
   }
+
+  // A partir de aquí sí va a salir tráfico: ahora se puede anunciar.
+  opts.onStart?.();
 
   const username = (await getMeta<string>('username')) ?? undefined;
   let requests = 0;
@@ -232,12 +289,23 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   if (c.username) await setMeta('username', c.username);
 
   if (!c.counts) {
-    const s = await save({ blockedUntil: now + COOLDOWN_SOFT_MS, blockedReason: c.detail });
+    const cd = cooldownForSeverity(c.severity);
+    const s = await save({
+      blockedUntil: now + cd.ms,
+      blockedReason: c.detail,
+      blockedKind: cd.kind,
+    });
     await log(`Poll falló: ${c.detail}`, 'bad');
     return { ran: false, skipped: c.detail, requests, enumerated: [], state: s };
   }
 
-  await save({ lastPollAt: now, lastCounts: c.counts, blockedUntil: null, blockedReason: null });
+  await save({
+    lastPollAt: now,
+    lastCounts: c.counts,
+    blockedUntil: null,
+    blockedReason: null,
+    blockedKind: null,
+  });
 
   // --- Que toca enumerar.
   const sweepDue = !state.lastSweepAt || now - state.lastSweepAt >= SWEEP_EVERY_MS;
@@ -350,7 +418,12 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
       // Paro por bloqueo o error: no hay cursor con el que continuar.
       const cd = cooldownFor(res.stopReason);
       if (cd) {
-        await save({ blockedUntil: Date.now() + cd.ms, blockedReason: cd.text, pending: null });
+        await save({
+          blockedUntil: Date.now() + cd.ms,
+          blockedReason: cd.text,
+          blockedKind: cd.kind,
+          pending: null,
+        });
         await log(`Parada: ${cd.text}`, res.stopReason === 'hard-block' ? 'bad' : 'warn');
       } else {
         await log(`Parada: ${res.detail}`, 'bad');

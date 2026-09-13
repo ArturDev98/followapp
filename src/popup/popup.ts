@@ -20,6 +20,10 @@ const watchEl = $<HTMLInputElement>('watch');
 const goBtn = $<HTMLButtonElement>('go');
 const bar = $<HTMLElement>('pbar');
 const diag = $<HTMLDivElement>('diag');
+const alertEl = $<HTMLDivElement>('alert');
+const alertText = $<HTMLParagraphElement>('alert-text');
+const alertCopy = $<HTMLButtonElement>('alert-copy');
+const alertHint = $<HTMLParagraphElement>('alert-hint');
 const loading = $<HTMLDivElement>('loading');
 const loadingText = $<HTMLSpanElement>('loading-text');
 const loadingN = $<HTMLSpanElement>('loading-n');
@@ -84,7 +88,19 @@ function retime(): void {
     if (ts) el.textContent = ago(ts);
   }
   const next = Number(statusText.dataset['until']);
-  if (next && !running) statusText.textContent = t('st_next', { t: until(next) });
+  if (next && !running) statusText.textContent = t(claveCuenta(), { t: until(next) });
+}
+
+/** La cuenta atrás del pie puede ser hacia la próxima revisión o hacia el
+ *  final de una espera. El ticker necesita saber cuál está pintada. */
+function claveCuenta(): 'st_next' | 'st_wait' {
+  return statusText.dataset['untilKey'] === 'st_wait' ? 'st_wait' : 'st_next';
+}
+
+function cuentaAtras(ts: number, clave: 'st_next' | 'st_wait'): void {
+  statusText.dataset['until'] = String(ts);
+  statusText.dataset['untilKey'] = clave;
+  statusText.textContent = t(clave, { t: until(ts) });
 }
 
 // ---------------------------------------------------------------- pestañas
@@ -136,8 +152,36 @@ async function hydrateAvatars(root: HTMLElement): Promise<void> {
 
 // --------------------------------------------------------------- actividad
 
+/** Nunca se encendio y nunca se capturo: no hay nada que contar todavia. */
+function sinEstrenar(h: HistoryResponse): boolean {
+  return !h.state?.enabled && (h.summary?.followers.snapshots ?? 0) === 0;
+}
+
+function renderWelcome(): void {
+  paneAct.innerHTML = `
+    <div class="welcome">
+      <strong>${esc(t('welcome_t'))}</strong>
+      <p>${esc(t('welcome_b'))}</p>
+      <button class="go" type="button" id="start">${esc(t('welcome_go'))}</button>
+      <p class="fine">${esc(t('welcome_note'))}</p>
+    </div>`;
+  badgeAct.hidden = true;
+
+  $<HTMLButtonElement>('start').addEventListener('click', async (e) => {
+    (e.currentTarget as HTMLButtonElement).disabled = true;
+    await setWatch(true);
+    // Sin esto la primera revision esperaria al primer disparo de la alarma.
+    void ask({ kind: 'capture' }).catch(() => {});
+  });
+}
+
 function renderActivity(h: HistoryResponse): void {
   const changes = h.changes ?? [];
+
+  if (sinEstrenar(h)) {
+    renderWelcome();
+    return;
+  }
 
   if (!h.ready) {
     paneAct.innerHTML = `
@@ -236,32 +280,73 @@ const PROBLEM = {
 
 let running = false;
 
+/** Último historial pintado: el botón de copiar lo necesita al pulsarlo. */
+let ultimo: HistoryResponse | null = null;
+
+/**
+ * Vigilando desde hace más de un día y ni un solo snapshot: está rota en
+ * silencio, que es el fallo del que nadie se entera. La entrada más vieja de
+ * la bitácora dice desde cuándo lo intentamos, sin guardar un campo nuevo.
+ */
+function atascada(h: HistoryResponse): boolean {
+  if (!h.state?.enabled || (h.summary?.followers.snapshots ?? 0) > 0) return false;
+  const primera = h.state.log.at(-1);
+  return Boolean(primera && Date.now() - primera.at > 24 * 60 * 60 * 1000);
+}
+
+/** La franja dice qué pasa; el pie, cuándo se reintenta. Sin solaparse. */
+function renderAlert(h: HistoryResponse): void {
+  const motivo = h.problem ? PROBLEM[h.problem] : atascada(h) ? 'p_stuck' : null;
+  alertEl.hidden = motivo === null;
+  if (!motivo) return;
+
+  alertText.textContent = t(motivo);
+  alertCopy.textContent = t('alert_copy');
+  alertHint.textContent = t('alert_hint');
+}
+
+alertCopy.addEventListener('click', async () => {
+  if (!ultimo) return;
+  alertCopy.textContent = (await copiar(diagText(ultimo))) ? t('diag_copied') : t('diag_copy_fail');
+  setTimeout(() => (alertCopy.textContent = t('alert_copy')), 1800);
+});
+
 function renderStatus(h: HistoryResponse): void {
   watchEl.checked = Boolean(h.state?.enabled);
 
-  if (h.problem) {
-    statusEl.className = 'status';
+  if (h.busy || running) {
+    statusEl.className = 'status run';
     delete statusText.dataset['until'];
-    statusText.textContent = t(PROBLEM[h.problem]);
+    statusText.textContent = t('st_scanning');
     return;
   }
 
-  if (h.busy || running) {
-    statusEl.className = 'status run';
-    statusText.textContent = t('st_scanning');
+  // Durante una espera la alarma sigue sonando, pero cada disparo se salta.
+  // Anunciar la próxima revisión aquí prometería algo que no va a ocurrir; lo
+  // que falta saber es cuándo se reintenta. El qué lo cuenta la franja.
+  const espera = h.state?.blockedUntil ?? 0;
+  if (espera > Date.now()) {
+    statusEl.className = 'status off';
+    cuentaAtras(espera, 'st_wait');
     return;
   }
 
   if (h.state?.enabled && h.nextPollAt) {
     statusEl.className = 'status on';
-    statusText.dataset['until'] = String(h.nextPollAt);
-    statusText.textContent = t('st_next', { t: until(h.nextPollAt) });
+    cuentaAtras(h.nextPollAt, 'st_next');
     return;
   }
 
   const last = h.summary?.followers.lastAt ?? null;
-  statusEl.className = 'status';
   delete statusText.dataset['until'];
+  delete statusText.dataset['untilKey'];
+
+  // Apagada con historial detras es un aviso: ese historial se esta quedando viejo.
+  statusEl.className = last && !h.state?.enabled ? 'status off' : 'status';
+  if (!h.state?.enabled) {
+    statusText.textContent = last ? t('st_paused') : t('st_never');
+    return;
+  }
   statusText.textContent = last ? t('st_last', { t: ago(last) }) : t('st_never');
 }
 
@@ -278,6 +363,81 @@ brand.addEventListener('click', () => {
   diag.hidden = !diagOn;
   void refresh();
 });
+
+/**
+ * Bloque pegable con el que un tester puede contar qué le pasa. No hay
+ * servidores ni telemetría: lo manda el usuario, a mano, si quiere.
+ */
+function diagText(h: HistoryResponse): string {
+  const s = h.state;
+  const ua = navigator.userAgent;
+  const chromeV = /Chrome\/([\d.]+)/.exec(ua)?.[1] ?? '?';
+  const so = /\(([^;)]+)/.exec(ua)?.[1]?.trim() ?? '?';
+  const cuando = (ts: number): string =>
+    new Date(ts).toLocaleString(locale(), {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+  const L = [
+    `FollowApp ${chrome.runtime.getManifest().version} · ${locale()} · Chrome ${chromeV} · ${so}`,
+    `vigilancia: ${s?.enabled ? `activa, poll cada ${s.pollMinutes} min` : 'apagada'}`,
+  ];
+  if (h.nextPollAt) L.push(`próximo poll: ${cuando(h.nextPollAt)}`);
+  L.push(
+    `contadores: ${h.counts?.followers ?? '—'} seguidores · ${h.counts?.following ?? '—'} seguidos`,
+  );
+
+  for (const k of ['followers', 'following'] as const) {
+    const x = h.summary?.[k];
+    if (!x) continue;
+    L.push(
+      `${KIND_LABEL[k]}: ${x.snapshots} snapshots · ${x.bases} base · última ${
+        x.lastAt ? cuando(x.lastAt) : '—'
+      }`,
+    );
+  }
+
+  if (s?.baseline) L.push(`latencia base: ${s.baseline} ms`);
+  if (s?.pending) {
+    L.push(
+      `a medias: ${KIND_LABEL[s.pending.kind]} · ${s.pending.ids.length} ids en ${
+        s.pending.chunks
+      } tandas`,
+    );
+  }
+  if (s?.blockedUntil && s.blockedUntil > Date.now()) {
+    L.push(`en espera hasta ${cuando(s.blockedUntil)} · ${s.blockedReason ?? ''}`);
+  }
+  if (h.problem) L.push(`problema: ${h.problem}`);
+
+  if (s?.log.length) {
+    L.push('bitácora:');
+    for (const e of s.log.slice(0, 20)) L.push(`  ${cuando(e.at)} [${e.level}] ${e.text}`);
+  }
+
+  return L.join('\n');
+}
+
+/** El popup no siempre tiene foco; execCommand aguanta donde la API falla. */
+async function copiar(texto: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  }
+}
 
 function renderDiag(h: HistoryResponse): void {
   const s = h.state;
@@ -325,9 +485,17 @@ function renderDiag(h: HistoryResponse): void {
             }${c.test ? t('test_suffix') : ''}</option>`,
         ).join('')}
       </select>
+      <button type="button" class="copy" id="copy">${esc(t('diag_copy'))}</button>
       <button type="button" id="wipe">${esc(t('diag_wipe'))}</button>
     </div>
+    <p class="fine">${esc(t('diag_privacy'))}</p>
     ${log ? `<div class="log">${log}</div>` : ''}`;
+
+  $<HTMLButtonElement>('copy').addEventListener('click', async (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    b.textContent = (await copiar(diagText(h))) ? t('diag_copied') : t('diag_copy_fail');
+    setTimeout(() => (b.textContent = t('diag_copy')), 1800);
+  });
 
   $<HTMLSelectElement>('every').addEventListener('change', (e) => {
     const minutes = Number((e.target as HTMLSelectElement).value);
@@ -351,16 +519,21 @@ async function refresh(): Promise<void> {
     return;
   }
 
+  ultimo = h;
   handle.textContent = h.username ? `@${h.username}` : '—';
   nFollowers.textContent = String(h.counts?.followers ?? h.summary?.followers.lastCount ?? '—');
   nFollowing.textContent = String(h.counts?.following ?? h.summary?.following.lastCount ?? '—');
 
   renderActivity(h);
   renderRelations(h.relations);
+  renderAlert(h);
   renderStatus(h);
   renderDiag(h);
 
-  goBtn.disabled = Boolean(h.busy);
+  // Insistir mientras Instagram pide calma es justo lo que no hay que hacer.
+  // Sin sesión, en cambio, reintentar no cuesta ni una petición.
+  goBtn.disabled =
+    Boolean(h.busy) || h.problem === 'soft-block' || h.problem === 'hard-block';
   loading.hidden = !h.busy && !running;
   if (ticker === null) ticker = setInterval(retime, 1000);
 
@@ -423,10 +596,13 @@ chrome.runtime.onMessage.addListener((m: unknown) => {
     }
 
     case 'tick-done':
+      // Sin tick-start no hubo revisión: no hay barra que cerrar.
+      if (running) {
+        bar.style.width = '100%';
+        setTimeout(() => (bar.style.width = '0'), 400);
+      }
       running = false;
       loading.hidden = true;
-      bar.style.width = '100%';
-      setTimeout(() => (bar.style.width = '0'), 400);
       void refresh();
       break;
   }

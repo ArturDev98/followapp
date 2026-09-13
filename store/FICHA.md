@@ -171,7 +171,7 @@ haya rodaje.
 1. **Actividad con bajas** — el caso que vende el producto
 2. **No te siguen de vuelta** — la segunda función más buscada
 3. **Revisión en curso** — la franja de progreso, prueba de que trabaja solo
-4. **Estado vacío** — qué ves el primer día, para no generar expectativas falsas
+4. **Bienvenida** — lo primero que ve un usuario nuevo, y que arrancar es un clic
 5. **En inglés** — demuestra el soporte de idiomas
 
 `store/montar-capturas.py` las compone a partir de capturas crudas del popup.

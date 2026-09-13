@@ -67,13 +67,20 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | S2 | Almacenamiento, diff y cruce | ✅ hecho |
 | S3 | Scheduler | ✅ hecho |
 | S4 | Popup: el MVP local | ✅ hecho |
-| — | **Enviada a la Chrome Web Store** | ⏳ v1.0.0 en revisión desde el 12 sep 2026 |
-| S5 | Backend y cuentas | a la espera del veredicto |
+| — | **Aprobada por la Chrome Web Store** | ✅ v1.0.0 · 13 sep 2026 |
+| S4.5 | Arranque y diagnóstico | ✅ v1.0.1 |
+| — | Semana de pruebas con conocidos | ⏳ en curso · ver `PRUEBAS.md` |
+| S5 | Backend y cuentas | tras la semana de pruebas |
 
-Se envió **no listada**: pasa la revisión completa y se instala por enlace, pero
-no aparece en búsquedas. La revisión es la única incógnita que no depende de
-nosotros, y por eso va antes que el backend: un rechazo ahora cuesta días, y
-después de construir S5, S6 y S7 costaría semanas de trabajo en el aire.
+Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
+pero no aparece en búsquedas. Era la única incógnita que no dependía de
+nosotros, y por eso fue antes que el backend: un rechazo ahora costaba días, y
+después de construir S5, S6 y S7 habría costado semanas de trabajo en el aire.
+
+El backend espera a que la extensión haya corrido días seguidos en navegadores
+que no son el nuestro. S5 monta servidores encima del motor de captura y mueve
+la frontera de confianza, que es el argumento de venta entero: construirlo sobre
+una semana de datos reales no es lo mismo que construirlo sobre una suposición.
 
 Política de privacidad: <https://arturdev98.github.io/followapp/>
 
@@ -186,8 +193,10 @@ significativo el campo `unreliable`.
 
 **El intervalo se elige desde el popup.** Producción son 4 h; hay opciones de
 2 y 15 min marcadas como *prueba*, porque esperar cuatro horas a que salte una
-alarma no es forma de verificar nada. El popup avisa con un banner cuando hay
-un intervalo de prueba activo, para que no se quede puesto por olvido.
+alarma no es forma de verificar nada. Salen marcadas como tales en el
+desplegable, pero **nada avisa después de elegirlas**: si una se queda puesta
+por olvido, solo se nota abriendo el diagnóstico. Solo se llega desde el panel
+oculto, así que el único que corre ese riesgo es quien desarrolla.
 
 #### Los dos arreglos de medición
 
@@ -223,6 +232,78 @@ borrado.
 **Layout:** cabecera y pie fijos, solo el listado hace scroll. Durante una
 revisión, una franja pegada arriba del listado con el progreso real
 (`48 / 94`), visible estés donde estés en la lista.
+
+### S4.5 — Que la semana de pruebas produzca señal
+
+Dos agujeros que solo se ven cuando la extensión sale de la máquina de quien la
+escribió.
+
+**La vigilancia venía apagada de fábrica.** El scheduler arranca con
+`enabled: false` y nada lo enciende solo: quien instalaba, abría el popup y no
+encontraba el interruptor «Automático» se quedaba con una extensión que no hacía
+absolutamente nada, para siempre, sin un solo mensaje de error. Ahora la primera
+apertura es una pantalla de bienvenida con un botón, que enciende la vigilancia
+**y dispara la primera revisión en el momento** en vez de esperar a la alarma. Y
+mientras esté apagada, el icono lleva un aviso ámbar: se ve sin abrir nada.
+
+**No había forma de que un tester contara qué le pasa.** No hay telemetría ni la
+va a haber — es el argumento de venta. Así que el canal es al revés: un botón
+**copiar diagnóstico** produce un bloque de texto pegable con versión, estado,
+contadores, snapshots y bitácora. Sin nombres de cuentas ni identificadores:
+solo números y estados. Lo manda el usuario, a mano, si quiere.
+
+**Y el diagnóstico se ofrece solo cuando hace falta.** Detrás de tres clics está
+bien para quien escribió la extensión, pero quien más necesita mandar un informe
+es justo quien no va a buscarlo ahí. Así que cuando hay un problema declarado
+—sin sesión, bloqueo blando o duro— el aviso sale con el botón dentro, arriba
+del listado, y el pie deja de repetir el mismo mensaje. Un botón fijo en el pie
+habría sido ruido en el 99 % de las aperturas.
+
+El tercer caso lo detecta el popup solo: **vigilancia activa y cero snapshots
+después de un día** es la extensión rota en silencio, que es el fallo del que
+nadie se enteraría nunca. La entrada más vieja de la bitácora dice desde cuándo
+lo estamos intentando, así que no hizo falta guardar ningún campo nuevo.
+
+**Y el popup decía que revisaba cuando no revisaba nada.** Con la sesión de
+Instagram cerrada, `tick()` corta antes de la primera petición —eso siempre
+estuvo bien— pero el service worker anunciaba `tick-start` *antes* de los
+cortes, así que el popup pintaba «Revisando…» y su barra de progreso para una
+revisión que no existió. Ahora el aviso lo dispara el scheduler cuando ya ha
+pasado sus comprobaciones, que es el único momento en el que es verdad.
+
+Y el pie prometía lo mismo por otra vía: durante una espera la alarma sigue
+sonando, pero cada disparo se salta, así que «Próxima en 10 s» era falso
+—la próxima de verdad era 35 minutos después—. Ahora durante una espera el pie
+cuenta hacia el reintento, y la franja dice por qué. Uno el cuándo, la otra el
+qué, sin repetirse.
+
+**Y encender la vigilancia también es una promesa.** Marcar «Automático» creaba
+la alarma sin mirar si había sesión, así que el interruptor se quedaba en verde
+con una cuenta atrás —«Próxima en 58 s»— que no significaba nada hasta que el
+primer disparo fallara un minuto después. Ahora la comprobación va donde ya
+vivía, `requireSession()`: lee la cookie, y si no hay sesión deja la espera
+apuntada para que la franja pueda explicarlo en el momento. Cuesta cero
+peticiones, y `tick()` usa la misma función en vez de repetirla.
+
+El interruptor se queda encendido a propósito: representa lo que el usuario
+quiere, no lo que se puede hacer ahora mismo. En cuanto vuelva a entrar en
+Instagram, la vigilancia sigue sola.
+
+**Un bloqueo no es como otro.** «Revisar» forzaba el disparo saltándose
+cualquier espera, incluidas las de ritmo: insistir justo después de que
+Instagram pidiera calma es lo contrario de lo que hay que hacer, y es la parte
+de la zona gris de ToS que sí está en nuestra mano. Ahora forzar solo salta las
+esperas por sesión —reintentar sin sesión no cuesta ni una petición— y el botón
+se desactiva mientras haya un bloqueo blando o duro.
+
+Para poder distinguirlos, el estado guarda `blockedKind`. Antes la clase de
+bloqueo se adivinaba buscando la palabra «sesión» dentro del motivo, que es un
+texto en español: habría fallado en cuanto alguien lo tradujera.
+
+**De paso, un estado zombi.** `wipe()` vacía también el estado del scheduler,
+pero la alarma sobrevivía: después de borrar el historial la extensión seguía
+capturando con el interruptor pintado en apagado. Ahora el borrado repone la
+vigilancia si estaba activa, y la para del todo si no.
 
 ### Pendiente para más adelante
 

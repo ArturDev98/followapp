@@ -47,12 +47,25 @@ function stopFor(sev: Severity): StopReason {
 export async function captureCounts(
   userId: string,
   username?: string | undefined,
-): Promise<{ counts: Counts | null; username: string | null; adapterId: string | null; detail: string }> {
+): Promise<{
+  counts: Counts | null;
+  username: string | null;
+  adapterId: string | null;
+  detail: string;
+  /** Quien llama necesita la gravedad para decidir cuanto esperar. */
+  severity: Severity;
+}> {
   const ctx: AdapterCtx = { userId, username };
   const out = await runAdapters(countsAdapters, ctx, undefined, () => {});
 
   if (!out.value) {
-    return { counts: null, username: null, adapterId: out.adapterId, detail: out.signal.reason };
+    return {
+      counts: null,
+      username: null,
+      adapterId: out.adapterId,
+      detail: out.signal.reason,
+      severity: out.signal.severity,
+    };
   }
 
   const { followers, following } = out.value;
@@ -61,6 +74,7 @@ export async function captureCounts(
     username: out.value.username ?? null,
     adapterId: out.adapterId,
     detail: 'ok',
+    severity: 'ok',
   };
 }
 

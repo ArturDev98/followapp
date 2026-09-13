@@ -17,8 +17,13 @@ const es = {
   tab_activity: 'Actividad',
   tab_notback: 'No te siguen',
 
+  welcome_t: 'Vamos a ver quién te deja de seguir',
+  welcome_b: 'FollowApp revisa tus seguidores cada pocas horas y te avisa de quién entra y quién se va. Todo se queda en este navegador.',
+  welcome_go: 'Empezar a vigilar',
+  welcome_note: 'La primera revisión solo guarda una copia de tu lista: es con la que se compararán las siguientes.',
+
   empty_first_t: 'Todavía no hay nada que comparar',
-  empty_first_b: 'La primera revisión guarda una foto de tus seguidores. Desde la siguiente verás quién entra y quién se va.',
+  empty_first_b: 'La primera revisión guarda una copia de tus seguidores. Desde la siguiente verás quién entra y quién se va.',
   empty_none_t: 'Sin movimientos',
   empty_none_b: 'Nadie ha entrado ni se ha ido desde que empezamos a mirar.',
   empty_cross_t: 'Aún no se puede cruzar',
@@ -41,6 +46,8 @@ const es = {
   st_next: 'Próxima {t}',
   st_last: 'Revisado {t}',
   st_never: 'Sin revisar todavía',
+  st_paused: 'Vigilancia apagada',
+  st_wait: 'En pausa · se reintenta {t}',
   st_error: 'No se pudo leer el historial.',
 
   auto: 'Automático',
@@ -49,6 +56,9 @@ const es = {
   p_no_session: 'Inicia sesión en Instagram para seguir revisando.',
   p_hard: 'Instagram pidió una pausa larga. Abre su app y vuelve más tarde.',
   p_soft: 'Instagram pidió esperar un rato. Se reintenta solo.',
+  p_stuck: 'Llevamos más de un día intentando leer tu lista sin conseguirlo.',
+  alert_copy: 'Copiar diagnóstico',
+  alert_hint: 'Pégaselo a quien te pasó la extensión: cuenta qué está fallando, sin nombres de cuentas.',
 
   t_now: 'ahora mismo',
   t_min: 'hace {n} min',
@@ -68,6 +78,10 @@ const es = {
   dur_days: '{n} días',
 
   diag_interval: 'intervalo',
+  diag_copy: 'copiar diagnóstico',
+  diag_copied: 'copiado ✓',
+  diag_copy_fail: 'no se pudo copiar',
+  diag_privacy: 'Sin nombres de cuentas ni identificadores.',
   diag_wipe: 'borrar historial',
   diag_wipe_ask: '¿Borrar todo el historial guardado?',
   diag_baseline: 'latencia base',
@@ -87,6 +101,11 @@ const en: Catalog = {
 
   tab_activity: 'Activity',
   tab_notback: "Don't follow back",
+
+  welcome_t: "Let's find out who unfollows you",
+  welcome_b: 'FollowApp checks your followers every few hours and tells you who comes and goes. Everything stays in this browser.',
+  welcome_go: 'Start watching',
+  welcome_note: 'The first check only saves a snapshot of your list: that is what the next ones compare against.',
 
   empty_first_t: 'Nothing to compare yet',
   empty_first_b: 'The first check saves a snapshot of your followers. From the next one you will see who comes and goes.',
@@ -112,6 +131,8 @@ const en: Catalog = {
   st_next: 'Next {t}',
   st_last: 'Checked {t}',
   st_never: 'Not checked yet',
+  st_paused: 'Watching is off',
+  st_wait: 'Paused · retrying {t}',
   st_error: "Couldn't read the history.",
 
   auto: 'Automatic',
@@ -120,6 +141,9 @@ const en: Catalog = {
   p_no_session: 'Sign in to Instagram to keep checking.',
   p_hard: 'Instagram asked for a long pause. Open their app and come back later.',
   p_soft: 'Instagram asked us to wait. It will retry on its own.',
+  p_stuck: "We've been trying to read your list for over a day without success.",
+  alert_copy: 'Copy diagnostics',
+  alert_hint: 'Paste it to whoever sent you the extension: it says what is failing, with no account names.',
 
   t_now: 'just now',
   t_min: '{n} min ago',
@@ -139,6 +163,10 @@ const en: Catalog = {
   dur_days: '{n} days',
 
   diag_interval: 'interval',
+  diag_copy: 'copy diagnostics',
+  diag_copied: 'copied ✓',
+  diag_copy_fail: "couldn't copy",
+  diag_privacy: 'No account names or identifiers.',
   diag_wipe: 'wipe history',
   diag_wipe_ask: 'Delete all saved history?',
   diag_baseline: 'latency baseline',
