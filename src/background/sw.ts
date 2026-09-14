@@ -6,11 +6,10 @@ import {
   disable,
   enable,
   getState,
-  isBusy,
   requireSession,
-  setBusy,
   tick,
 } from '../lib/scheduler';
+import { isBusy, setBusy } from '../lib/busy';
 import type { Broadcast, HistoryResponse, Msg, ProblemCode, TickResponse } from '../lib/messages';
 
 /** Service worker: host de la captura, el almacenamiento y el scheduler. */
@@ -39,7 +38,12 @@ async function runTick(force: boolean): Promise<TickResponse> {
       // Lo anuncia el scheduler cuando pasa sus cortes, no antes: sin sesión
       // no hay revisión, y pintar "Revisando…" seria mentir.
       onStart: () => broadcast({ kind: 'tick-start', force }),
-      onProgress: (progress) => broadcast({ kind: 'progress', progress }),
+      onProgress: (progress) => {
+        // Renovar la marca: lo que la hace fiable es que caduca, y caducar a
+        // mitad de una captura larga dejaria entrar un segundo disparo.
+        void setBusy(true);
+        broadcast({ kind: 'progress', progress });
+      },
     });
     result = {
       ran: r.ran,
@@ -76,6 +80,10 @@ async function syncBadge(enabled: boolean): Promise<void> {
 
 /** Al instalar o al arrancar Chrome, reponer la alarma si estaba activa. */
 async function restore(): Promise<void> {
+  // Si el navegador acaba de arrancar no hay ninguna captura en curso: lo que
+  // haya quedado marcado es de un worker que murio a medias.
+  await setBusy(false);
+
   const s = await getState();
   await syncBadge(s.enabled);
   if (!s.enabled) return;

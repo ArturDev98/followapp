@@ -1,3 +1,4 @@
+import { isBusy } from './busy';
 import { STORE_AVATARS, req, tx } from './db';
 
 /**
@@ -13,15 +14,6 @@ interface AvatarRecord {
 
 /** Object URLs vivos, para revocarlos al cerrar el popup. */
 const live = new Set<string>();
-
-async function captureRunning(): Promise<boolean> {
-  try {
-    const r = await chrome.storage.local.get('captureRunning');
-    return r['captureRunning'] === true;
-  } catch {
-    return false;
-  }
-}
 
 async function readCached(id: string): Promise<Blob | null> {
   const r = await tx([STORE_AVATARS], 'readonly', (t) =>
@@ -46,7 +38,7 @@ export async function resolveAvatar(id: string, url: string | null): Promise<str
 
       // Durante una captura no se descarga: inflaria la latencia que mide el
       // gobernador. La cache sigue sirviendo; el resto se resuelve al terminar.
-      if (await captureRunning()) return null;
+      if (await isBusy()) return null;
 
       const res = await fetch(url);
       if (!res.ok) return null;

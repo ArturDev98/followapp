@@ -443,14 +443,4 @@ function dedupe(ids: string[]): string[] {
   return [...new Set(ids)];
 }
 
-/** Marca de si hay una captura en curso, para que el popup no la estorbe. */
-export async function setBusy(on: boolean): Promise<void> {
-  await chrome.storage.local.set({ captureRunning: on });
-}
-
-export async function isBusy(): Promise<boolean> {
-  const r = await chrome.storage.local.get('captureRunning');
-  return r['captureRunning'] === true;
-}
-
 export type { Profile };

@@ -69,6 +69,7 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | S4 | Popup: el MVP local | ✅ hecho |
 | — | **Aprobada por la Chrome Web Store** | ✅ v1.0.0 · 13 sep 2026 |
 | S4.5 | Arranque y diagnóstico | ✅ v1.0.1 |
+| — | Marca de captura que sobrevivía al cierre del navegador | ✅ v1.0.2 |
 | — | Semana de pruebas con conocidos | ⏳ en curso · ver `PRUEBAS.md` |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
@@ -305,7 +306,44 @@ pero la alarma sobrevivía: después de borrar el historial la extensión seguí
 capturando con el interruptor pintado en apagado. Ahora el borrado repone la
 vigilancia si estaba activa, y la para del todo si no.
 
-### Pendiente para más adelante
+### 1.0.2 — La marca de «captura en curso» no podía ser un booleano
+
+Cerrar el navegador a mitad de una revisión dejaba el popup diciendo
+«Revisando…» para siempre. El síntoma era feo; la causa, mucho peor.
+
+`captureRunning` vivía en `chrome.storage.local` y se apagaba en un `finally`.
+Chrome mata el service worker cuando le conviene —y cerrar el navegador lo mata
+siempre—, así que ese `finally` puede no llegar a ejecutarse nunca. Y un
+booleano encendido así se queda encendido para siempre:
+
+```ts
+if (await isBusy()) return { ran: false, skipped: 'ya hay un disparo en curso' };
+```
+
+Cada disparo posterior se descartaba en esa primera línea, antes de escribir
+una sola línea de bitácora. La alarma seguía sonando, el popup seguía pintando
+«Revisando…», y la extensión no volvía a capturar jamás. **Muerta y con cara de
+estar trabajando**, que es exactamente el fallo del que un usuario no se entera
+—y el que la franja de diagnóstico no habría detectado, porque `p_stuck` mira
+que no haya snapshots y aquí los había.
+
+Ahora la marca es **una hora, no un sí/no**, y vive en `lib/busy.ts` porque la
+leen dos sitios por motivos distintos: el scheduler para no pisar un disparo
+con otro, y la caché de avatares para no descargar fotos mientras se mide la
+latencia. Cada uno se había escrito su propio lector; ahora comparten uno.
+
+Tres capas, independientes a propósito:
+
+1. **Caduca.** Sin señales de vida en 10 minutos, la marca es de un worker
+   muerto y se descarta. Un disparo gasta 60 peticiones a ~3 s: tres minutos,
+   seis si el gobernador afloja.
+2. **Se renueva mientras haya progreso real.** Cada página enumerada vuelve a
+   sellarla, para que una cuenta grande no caduque a media captura.
+3. **Al arrancar Chrome se limpia.** Si el navegador acaba de abrirse, no hay
+   ninguna captura en curso: lo que quede marcado es basura.
+
+El booleano que dejaron las versiones anteriores se limpia al leerlo, así que
+quien tenga la extensión encallada se desencalla solo al actualizar.
 
 #### Intervalo adaptativo según el tamaño de la cuenta
 

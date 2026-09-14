@@ -535,6 +535,9 @@ async function refresh(): Promise<void> {
   goBtn.disabled =
     Boolean(h.busy) || h.problem === 'soft-block' || h.problem === 'hard-block';
   loading.hidden = !h.busy && !running;
+  // El popup pudo abrirse a mitad de una captura: sin tick-start no hubo
+  // etiqueta, y la franja salia con el aspa girando y sin decir nada.
+  if (!loading.hidden && !loadingText.textContent) loadingText.textContent = t('st_scanning');
   if (ticker === null) ticker = setInterval(retime, 1000);
 
   void hydrateAvatars(document.body);
