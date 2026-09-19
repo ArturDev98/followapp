@@ -33,6 +33,9 @@ const es = {
 
   ev_out: 'Te dejó de seguir',
   ev_in: 'Te siguió',
+  ev_gone: 'Su cuenta ya no existe',
+  ev_cycle: 'Entró y salió {n} veces',
+  ev_unconfirmed: 'sin confirmar',
   unknown_account: 'Cuenta desconocida',
   cross_header: 'Les sigues y no te siguen · {n}',
 
@@ -118,6 +121,9 @@ const en: Catalog = {
 
   ev_out: 'Unfollowed you',
   ev_in: 'Followed you',
+  ev_gone: 'Their account is gone',
+  ev_cycle: 'Came and went {n} times',
+  ev_unconfirmed: 'unconfirmed',
   unknown_account: 'Unknown account',
   cross_header: "You follow them, they don't follow back · {n}",
 

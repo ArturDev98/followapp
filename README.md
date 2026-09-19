@@ -70,7 +70,9 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | — | **Aprobada por la Chrome Web Store** | ✅ v1.0.0 · 13 sep 2026 |
 | S4.5 | Arranque y diagnóstico | ✅ v1.0.1 |
 | — | Marca de captura que sobrevivía al cierre del navegador | ✅ v1.0.2 |
-| — | Semana de pruebas con conocidos | ⏳ en curso · ver `PRUEBAS.md` |
+| — | Semana de pruebas con conocidos | ⏳ 1 diagnóstico leído · ver `PRUEBAS.md` |
+| S4.6 | Bajas falsas y ciclos de ir y venir | ✅ hecho |
+| S4.7 | Ritmo: poll corto, suelos que escalan, frenos visibles | ✅ hecho |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
 Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
@@ -391,6 +393,97 @@ como red de seguridad.
   bucle —práctica habitual de bots de crecimiento— inundan la cronología con
   el mismo nombre repetido. Conviene agruparlas.
 
+### S4.6 — Una baja que no lo era
+
+«Te dejó de seguir» es la única frase que la extensión dice con seguridad, y
+hasta ahora la decía también cuando no se había ido nadie: una cuenta
+suspendida, eliminada o desactivada desaparece de la lista exactamente igual
+que una que te deja de seguir, y restar dos listas no distingue una cosa de la
+otra.
+
+Es el error que más caro sale, porque el usuario **puede comprobarlo**: abre el
+perfil, ve que no existe, y desde ese momento no se cree nada más de lo que le
+digamos. En un informe para quien mira métricas en vez de caras, pesa todavía
+más.
+
+**La prueba cuesta una petición.** `users/{id}/info/` sobre el id de la baja:
+un 404 es una cuenta que ya no existe; un 200 con perfil es alguien que sigue
+ahí y se fue de verdad. Cada baja queda con un veredicto —`left`, `gone` o
+`unknown`— guardado junto al snapshot que la detectó.
+
+| Módulo | Responsabilidad |
+|---|---|
+| `lib/verify.ts` | Comprueba si una baja sigue existiendo, con tope y freno |
+
+Tres límites para que la comprobación no se convierta en un problema nuevo:
+
+- **Ocho por disparo.** Una purga grande no puede comerse la tanda entera.
+- **Se para a la primera señal de bloqueo.** Lo que quede sin comprobar se
+  marca dudoso, no se calla: pintarlo como baja segura sería repetir el error.
+- **Solo seguidores.** Una baja en «seguidos» la hizo el propio usuario.
+
+**Y el que va y viene.** Quien entra y sale varias veces no son cinco noticias,
+es un hecho solo: la actividad lo agrupa en una línea con el número de vueltas
+cuando se ha ido dos veces o más en 30 días. El rojo queda reservado para las
+bajas que lo son.
+
+**El primer diagnóstico real destapó la otra mitad del problema.** La
+reconciliación comparaba lo enumerado con el contador y descartaba el snapshot
+ante *cualquier* desajuste. Pero el peligro no es simétrico: leer **de menos**
+significa que falta gente, y esa gente sale como baja falsa en el diff
+siguiente; leer **de más** solo puede ser el contador con retraso —medido: tres
+horas y media— o alguien que se fue durante la lectura, que es la verdad y
+saldrá como baja de todas formas. Descartar esa lectura costaba la enumeración
+entera y retrasaba la detección. Ahora solo se descarta a la baja. El caso está
+documentado con la bitácora que lo prueba en `PRUEBAS.md`.
+
+### S4.7 — El ritmo deja de ser el mismo para todos
+
+La primera semana de datos reales dijo dos cosas a la vez: que el motor va
+**muy** sobrado en una cuenta pequeña, y que nada impedía que una grande se
+suicidara. Las dos se arreglan con la misma idea: **el ritmo tiene que salir de
+lo que cuesta leer la lista, no de una constante**.
+
+**El poll baja de 4 h a 1 h.** Cuesta una petición y la respuesta tarda 317 ms;
+cuatro horas era prudencia sin motivo. La diferencia para el usuario es que «te
+dejó de seguir hace 4 h» pasa a «hace 1 h», que es la distancia entre un dato y
+una sensación. Quien eligió su intervalo a mano se queda con el suyo: el estado
+guarda ahora `pollChosen`, y sin esa marca la extensión adopta el valor por
+defecto **también cuando baja**, que si no la mejora nunca llega a quien ya la
+tiene instalada.
+
+**El suelo entre lecturas escala con `ceil(N/25)`**, que es lo que de verdad
+cuesta enumerar:
+
+| Cuenta | Peticiones por lectura | Suelo automático | Suelo del botón |
+|---|---|---|---|
+| 105 seguidores | 5 | 30 min | 10 min |
+| 3.750 | 150 | 15 h | 5 h |
+| 10.000 | 400 | 20 h (tope) | 6 h (tope) |
+
+Los 150 de una cuenta de 3.750 son **la prueba de estrés entera de una
+sentada**. Sin suelo, un contador que oscila —y oscila ±1 sin parar— dispararía
+esas 150 peticiones en cada poll. El barrido diario sigue sin mirar suelos: es
+la garantía de un dato al día como mínimo.
+
+**Y el botón «Revisar» deja de ser gratis.** En el diagnóstico hay dos capturas
+manuales separadas por un minuto: 14 peticiones en 60 s en una cuenta de 105.
+En una de 3.750 habrían sido **300 en dos minutos**, que es el camino más corto
+a un bloqueo duro. Ahora el botón tiene su propio suelo, más corto que el
+automático —lo pide el usuario— pero nunca cero.
+
+**El gobernador por fin se ve.** Medía cuántas veces tuvo que aflojar y el p95
+de latencia, y no lo contaba en ninguna parte. Ahora cada lectura lo deja en la
+bitácora:
+
+```
+Seguidores: 105 · 5 peticiones · p95 480 ms
+```
+
+Es la única forma de saber dónde está el techo de una cuenta grande **sin
+esperar a que alguien se bloquee**, y el dato que la semana de pruebas no podía
+producir de ninguna otra manera.
+
 ### Pruebas
 
 La lógica que no se puede verificar a ojo se prueba compilando el módulo suelto
@@ -416,6 +509,7 @@ src/
   lib/capture.ts     Orquestador: presupuesto, cursor, reanudación
   lib/db.ts          Envoltorio de IndexedDB
   lib/snapshots.ts   Base + deltas, reconstrucción, diff, cruce, caché de perfiles
+  lib/verify.ts      Comprueba si una baja es una cuenta que ya no existe
   lib/scheduler.ts   Máquina de estados de la vigilancia (chrome.alarms)
   lib/avatars.ts     Caché de fotos en bytes
   lib/types.ts       Tipos de dominio

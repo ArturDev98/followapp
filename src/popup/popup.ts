@@ -1,5 +1,5 @@
 import type { Broadcast, HistoryResponse, Msg } from '../lib/messages';
-import type { Profile, Relations } from '../lib/types';
+import type { ChangeEvent, Profile, Relations } from '../lib/types';
 import { KIND_LABEL, POLL_CHOICES } from '../lib/types';
 import { initials, releaseAvatars, resolveAvatar } from '../lib/avatars';
 import { LOCALES, initLocale, locale, setLocale, t, type Locale } from '../lib/i18n';
@@ -175,6 +175,27 @@ function renderWelcome(): void {
   });
 }
 
+/** Qué pasó con esta persona: la racha manda sobre el movimiento suelto. */
+function whatCell(c: ChangeEvent): string {
+  const clase = c.cycle ? 'cycle' : c.verdict === 'gone' ? 'gone' : c.dir;
+  const texto = c.cycle
+    ? t('ev_cycle', { n: c.cycle.times })
+    : c.dir === 'in'
+      ? t('ev_in')
+      : c.verdict === 'gone'
+        ? t('ev_gone')
+        : t('ev_out');
+
+  // Solo se marca lo que se intentó comprobar y no se pudo, no lo antiguo.
+  const duda = !c.cycle && c.dir === 'out' && c.verdict === 'unknown';
+
+  return `<span class="what ${clase}">
+         <b>${esc(texto)}</b>
+         ${duda ? `<span class="q">${esc(t('ev_unconfirmed'))}</span>` : ''}
+         <span class="t" data-ago="${c.at}">${ago(c.at)}</span>
+       </span>`;
+}
+
 function renderActivity(h: HistoryResponse): void {
   const changes = h.changes ?? [];
 
@@ -203,7 +224,8 @@ function renderActivity(h: HistoryResponse): void {
     return;
   }
 
-  const salidas = changes.filter((c) => c.dir === 'out').length;
+  // Una cuenta que ya no existe no es una baja: contarla asustaría por nada.
+  const salidas = changes.filter((c) => c.dir === 'out' && c.verdict !== 'gone').length;
   badgeAct.hidden = salidas === 0;
   badgeAct.textContent = String(salidas);
 
@@ -229,13 +251,7 @@ function renderActivity(h: HistoryResponse): void {
       }
     }
 
-    html += personRow(
-      c.profile,
-      `<span class="what ${c.dir}">
-         <b>${c.dir === 'out' ? t('ev_out') : t('ev_in')}</b>
-         <span class="t" data-ago="${c.at}">${ago(c.at)}</span>
-       </span>`,
-    );
+    html += personRow(c.profile, whatCell(c));
   }
 
   paneAct.innerHTML =
@@ -399,6 +415,17 @@ function diagText(h: HistoryResponse): string {
       }`,
     );
   }
+
+  // Cuantas bajas resultaron no serlo: es el numero que la semana de pruebas
+  // no puede sacar de ningun otro sitio.
+  const bajas = (h.changes ?? []).filter((c) => c.dir === 'out');
+  if (bajas.length) {
+    const fuera = bajas.filter((c) => c.verdict === 'gone').length;
+    const dudosas = bajas.filter((c) => c.verdict === 'unknown').length;
+    L.push(`bajas: ${bajas.length} · ${fuera} ya no existían · ${dudosas} sin confirmar`);
+  }
+  const rachas = (h.changes ?? []).filter((c) => c.cycle).length;
+  if (rachas) L.push(`rachas de ir y venir: ${rachas}`);
 
   if (s?.baseline) L.push(`latencia base: ${s.baseline} ms`);
   if (s?.pending) {

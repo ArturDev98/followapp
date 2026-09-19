@@ -67,6 +67,11 @@ mandarlo automáticamente, y ese es justamente el argumento de venta.
 | `latencia base` subiendo entre informes | El gobernador está midiendo deriva: es la señal que buscamos |
 | `a medias: ... en N tandas` | Cuenta grande troceando. Anotar cuántas tandas necesita |
 | `leidos X, el contador dice Y` | Desajuste de reconciliación: el caso que produce bajas falsas |
+| `bajas: N · M ya no existían` | **El dato 3**: cuántas de las bajas no eran bajas |
+| `rachas de ir y venir: N` | Cuentas que entran y salen: cuánto ruido quita el agrupado |
+| `p95 X ms` en cada lectura | Sube respecto a la latencia base = Instagram está frenando |
+| `frenó N veces` | **El dato 1**: el gobernador aflojó. Anotar el tamaño de la cuenta |
+| `Se relee X en N min` | El suelo pospuso una lectura. Normal en cuentas grandes |
 
 ## Las preguntas que hay que hacerles
 
@@ -87,3 +92,59 @@ Datos que ningún probe puede dar y que bloquean decisiones ya tomadas en el pla
 - **Cuántas enumeraciones diarias aguanta una cuenta mediana** sin que Instagram
   frene. Es el número que calibra el suelo entre enumeraciones.
 - **Cuántas veces se confunde una cuenta suspendida con una baja real.**
+
+---
+
+## Lo que dejó · 19 sep 2026
+
+Un diagnóstico completo de una cuenta pequeña —**105 seguidores, 45 seguidos**—
+con seis días de vigilancia en 1.0.2 y poll cada 4 h.
+
+### Ni un freno en seis días
+
+Ni un `soft`, ni un `hard`, ni un `feedback_required` en toda la bitácora.
+Latencia base **317 ms** y sin deriva: el gobernador nunca tuvo que aflojar, y
+espera 3 s entre peticiones que tardan 0,3 s.
+
+El día más cargado fue el 18/9: cinco enumeraciones de seguidores —una
+descartada—, tres de seguidos y seis polls, **~40 peticiones en el día**. Dos de
+esas enumeraciones salieron **con un minuto de diferencia** porque alguien pulsó
+«Revisar» dos veces: 14 peticiones en 60 s, sin que Instagram dijera nada.
+
+| Dato que bloqueaba S5 | Estado |
+|---|---|
+| Techo por encima de 3.750 seguidores | ❌ sigue siendo extrapolación: la cuenta probada tiene 105 |
+| Enumeraciones diarias que aguanta una cuenta | ⚠️ 4 al día en una cuenta de 105, a 5 peticiones cada una |
+| Bajas falsas por cuentas suspendidas | ❌ el diagnóstico es de 1.0.2, anterior a los veredictos |
+
+El segundo dato hay que leerlo con cuidado: lo que Instagram cuenta no son
+enumeraciones, son **peticiones**. Una cuenta de 105 gasta 5 por enumeración;
+una de 3.750 gasta 150, que es la prueba de estrés entera. Esta cuenta confirma
+la **forma** de la regla —el suelo tiene que escalar con `ceil(N/25)`— pero no
+su valor en el extremo grande.
+
+### El contador va con retraso, y nos costaba la lectura entera
+
+Lo más útil del diagnóstico es un fallo que no se habría visto de otra forma:
+
+```
+18/9, 07:57 [warn] Seguidores: descartado, leidos 106, el contador dice 105.
+18/9, 11:28 [info] Seguidores: 106 · 5 peticiones
+```
+
+A las 07:57 la enumeración leyó 106 y el contador decía 105, así que se
+descartó el snapshot. Tres horas y media después, el contador ya decía 106 y
+exactamente la misma lista se aceptó: **los 106 eran correctos desde el
+principio**, y el contador de Instagram iba con retraso.
+
+La regla de reconciliación era simétrica —cualquier desajuste, descartar— pero
+el peligro no lo es. **Leer de menos** significa que falta gente, y esa gente
+aparece como baja falsa en el diff siguiente: descartar está bien. **Leer de
+más** no puede significar eso: o el contador va con retraso, o alguien se fue
+durante la lectura y saldrá como baja en el próximo diff, que es la verdad.
+Desde ahora solo se descarta a la baja.
+
+Hay evidencia de sobra del mismo ruido en la otra dirección: dos capturas
+manuales separadas por un minuto leyeron 107 y 106, y una de ellas anotó «el
+contador se movio de 107 a 106 durante la lectura». En una cuenta de 105
+seguidores el contador oscila ±1 constantemente.

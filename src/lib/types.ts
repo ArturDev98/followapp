@@ -7,10 +7,11 @@ export const KIND_LABEL: Record<SnapshotKind, string> = {
 };
 
 /**
- * Intervalos del poll de fondo. 4 h es produccion; 2 y 15 min son para probar
- * el scheduler sin esperar, y el popup las marca como tales.
+ * Intervalos del poll de fondo. 1 h es produccion —cuesta 1 peticion, y en
+ * pruebas la respuesta tardo 317 ms sin un solo freno en seis dias—; 2 y 15
+ * min son para probar el scheduler sin esperar, y el popup las marca.
  */
-export const POLL_DEFAULT_MINUTES = 240;
+export const POLL_DEFAULT_MINUTES = 60;
 
 export const POLL_CHOICES: { minutes: number; label: string; test?: boolean }[] = [
   { minutes: 2, label: '2 min', test: true },
@@ -108,6 +109,25 @@ export interface CaptureProgress {
 }
 
 /**
+ * Que fue de alguien que desaparecio de la lista. Sin esto, una cuenta
+ * suspendida se cuenta como baja y el informe miente.
+ */
+export type Verdict =
+  | 'left'      // la cuenta existe: se fue de verdad
+  | 'gone'      // ya no existe: suspendida, eliminada o desactivada
+  | 'unknown';  // no se pudo comprobar
+
+/** Ir y venir varias veces es un solo hecho, no una noticia por vuelta. */
+export interface Cycle {
+  /** Veces que se fue dentro de la ventana. */
+  times: number;
+  /** Primer movimiento de la racha. */
+  firstAt: number;
+  /** Donde esta ahora. */
+  now: 'in' | 'out';
+}
+
+/**
  * Snapshot: base (lista completa en `ids`) o delta (solo diferencias).
  * added/removed estan siempre, para que el historial sobreviva al rebase.
  */
@@ -128,6 +148,8 @@ export interface SnapshotRecord {
   chainLength: number;
   added: string[];
   removed: string[];
+  /** Veredicto por cada id de `removed`. Ausente = nunca se comprobo. */
+  verdicts?: Record<string, Verdict>;
   counts: Counts | null;
 }
 
@@ -152,6 +174,10 @@ export interface ChangeEvent {
   since: number | null;
   dir: 'in' | 'out';
   profile: Profile;
+  /** Solo en salidas, y solo si se llego a comprobar. */
+  verdict?: Verdict;
+  /** Si viene, esta fila resume una racha y no un movimiento suelto. */
+  cycle?: Cycle;
   /** El snapshot se leyo en varias tandas: pudo cambiar por el camino. */
   unreliable: boolean;
 }

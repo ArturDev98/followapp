@@ -2,11 +2,13 @@ import { STORE_PROFILES, STORE_SNAPSHOTS, getAll, req, tx } from './db';
 import type {
   ChangeEvent,
   Counts,
+  Cycle,
   Diff,
   Profile,
   Relations,
   SnapshotKind,
   SnapshotRecord,
+  Verdict,
 } from './types';
 
 /** Cada cuantos deltas se reescribe una base completa. */
@@ -151,6 +153,21 @@ export async function appendSnapshot(
 }
 
 /**
+ * Anota que fue de cada baja. Va despues de cerrar el snapshot: comprobarlo
+ * cuesta peticiones y el diff no puede esperar a eso.
+ */
+export async function setVerdicts(id: number, verdicts: Record<string, Verdict>): Promise<void> {
+  if (Object.keys(verdicts).length === 0) return;
+
+  await tx([STORE_SNAPSHOTS], 'readwrite', async (t) => {
+    const store = t.objectStore(STORE_SNAPSHOTS);
+    const rec = await req(store.get(id) as IDBRequest<SnapshotRecord | undefined>);
+    if (!rec) return;
+    store.put({ ...rec, verdicts: { ...rec.verdicts, ...verdicts } });
+  });
+}
+
+/**
  * Diff entre los dos ultimos snapshots completos.
  *
  * Devuelve perfiles, no ids: es lo que el popup necesita pintar.
@@ -222,6 +239,44 @@ export async function relations(): Promise<Relations> {
   };
 }
 
+/** Ventana en la que ir y venir cuenta como una racha, y no como dos noticias. */
+const CYCLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Dos idas ya son un patron; una sola es una baja normal que luego volvio. */
+const CYCLE_MIN_OUTS = 2;
+
+interface Crudo {
+  at: number;
+  since: number | null;
+  dir: 'in' | 'out';
+  id: string;
+  unreliable: boolean;
+  verdict: Verdict | undefined;
+}
+
+/** Quien entra y sale repetidamente dentro de la ventana. */
+function detectCycles(crudos: Crudo[]): Map<string, Cycle> {
+  const desde = Date.now() - CYCLE_WINDOW_MS;
+  const cuenta = new Map<string, { in: number; out: number; firstAt: number; now: 'in' | 'out' }>();
+
+  // Los crudos vienen del mas nuevo al mas viejo: el primero de cada id manda.
+  for (const e of crudos) {
+    if (e.at < desde) continue;
+    const c = cuenta.get(e.id) ?? { in: 0, out: 0, firstAt: e.at, now: e.dir };
+    c[e.dir]++;
+    c.firstAt = e.at;
+    cuenta.set(e.id, c);
+  }
+
+  const ciclos = new Map<string, Cycle>();
+  for (const [id, c] of cuenta) {
+    if (c.out >= CYCLE_MIN_OUTS && c.in >= 1) {
+      ciclos.set(id, { times: c.out, firstAt: c.firstAt, now: c.now });
+    }
+  }
+  return ciclos;
+}
+
 /**
  * Actividad reciente de seguidores, la mas nueva primero.
  * Los diffs ya estan guardados en cada snapshot: esto solo los recorre.
@@ -231,26 +286,49 @@ export async function recentChanges(limit = 60): Promise<ChangeEvent[]> {
 
   const completos = history.filter((s) => s.complete);
 
-  type Crudo = { at: number; since: number | null; dir: 'in' | 'out'; id: string; unreliable: boolean };
   const crudos: Crudo[] = [];
 
   for (let i = 0; i < completos.length; i++) {
     const s = completos[i]!;
     const since = completos[i - 1]?.takenAt ?? null;
     const unreliable = Boolean(s.chunked);
-    for (const id of s.removed) crudos.push({ at: s.takenAt, since, dir: 'out', id, unreliable });
-    for (const id of s.added) crudos.push({ at: s.takenAt, since, dir: 'in', id, unreliable });
+    for (const id of s.removed) {
+      crudos.push({ at: s.takenAt, since, dir: 'out', id, unreliable, verdict: s.verdicts?.[id] });
+    }
+    for (const id of s.added) {
+      crudos.push({ at: s.takenAt, since, dir: 'in', id, unreliable, verdict: undefined });
+    }
   }
 
   crudos.sort((a, b) => b.at - a.at);
-  const recorte = crudos.slice(0, limit);
 
-  const cache = await getProfiles(recorte.map((e) => e.id));
-  return recorte.map((e) => ({
+  const ciclos = detectCycles(crudos);
+
+  // De una racha solo sobrevive el movimiento mas reciente, ya con el conteo.
+  const vistos = new Set<string>();
+  const recorte: { e: Crudo; cycle: Cycle | undefined }[] = [];
+
+  for (const e of crudos) {
+    const c = ciclos.get(e.id);
+    // Por debajo de firstAt el movimiento queda fuera de la racha: va suelto.
+    if (c && e.at >= c.firstAt) {
+      if (vistos.has(e.id)) continue;
+      vistos.add(e.id);
+      recorte.push({ e, cycle: c });
+    } else {
+      recorte.push({ e, cycle: undefined });
+    }
+    if (recorte.length >= limit) break;
+  }
+
+  const cache = await getProfiles(recorte.map((r) => r.e.id));
+  return recorte.map(({ e, cycle }) => ({
     at: e.at,
     since: e.since,
     dir: e.dir,
     profile: hydrate([e.id], cache, e.at)[0]!,
+    ...(e.verdict ? { verdict: e.verdict } : {}),
+    ...(cycle ? { cycle } : {}),
     unreliable: e.unreliable,
   }));
 }

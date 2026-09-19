@@ -179,3 +179,13 @@ completa, porque quien se va puede estar en cualquier posición.
 No está confirmado: Instagram aplica ranking propio a estas listas y el orden
 no está documentado. **Test**: guardar la página 1 en dos snapshots separados
 por una alta conocida y ver si aparece arriba.
+
+**¿Qué devuelve `users/{id}/info/` sobre una cuenta que ya no existe?** El
+veredicto de las bajas (S4.6) asume **404** para suspendida, eliminada o
+desactivada, y **200 con perfil** para la que sigue viva. No está confirmado
+contra una cuenta suspendida real.
+
+Si la suposición falla, el error cae del lado seguro por construcción: un 200
+con forma rara se marca `unknown` y se pinta «sin confirmar», nunca al revés.
+**Test**: guardar el id de una cuenta que se sepa suspendida y pedir ese
+endpoint con sesión válida.

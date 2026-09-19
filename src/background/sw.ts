@@ -3,6 +3,7 @@ import { getMeta, wipe } from '../lib/db';
 import {
   ALARM_POLL,
   ALARM_RESUME,
+  adoptDefaultPoll,
   disable,
   enable,
   getState,
@@ -87,6 +88,10 @@ async function restore(): Promise<void> {
   const s = await getState();
   await syncBadge(s.enabled);
   if (!s.enabled) return;
+
+  // Repone la alarma por su cuenta cuando mueve el intervalo.
+  if (await adoptDefaultPoll()) return;
+
   const existing = await chrome.alarms.get(ALARM_POLL);
   if (!existing) await enable();
 }

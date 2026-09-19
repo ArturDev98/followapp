@@ -1,8 +1,9 @@
 import { readUserId, type Severity } from './http';
 import { captureCounts, captureList } from './capture';
-import { appendSnapshot, saveProfiles } from './snapshots';
+import { appendSnapshot, saveProfiles, setVerdicts, type AppendResult } from './snapshots';
+import { tally, verifyRemovals } from './verify';
 import { getMeta, setMeta } from './db';
-import { POLL_CHOICES, POLL_DEFAULT_MINUTES } from './types';
+import { KIND_LABEL, POLL_CHOICES, POLL_DEFAULT_MINUTES } from './types';
 import type { CaptureProgress, Counts, Profile, SnapshotKind, StopReason } from './types';
 
 /**
@@ -27,6 +28,38 @@ const TICK_BUDGET = 60;
 /** Barrido completo forzado, pase lo que pase con los contadores. */
 const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Bajas que se comprueban por disparo. Cada una cuesta una peticion, asi que
+ * el tope existe para que una purga grande no se coma la tanda entera.
+ */
+const VERIFY_BUDGET = 8;
+
+/**
+ * Suelo entre lecturas de una misma lista, por peticion que cuesta leerla.
+ * Una cuenta de 3.750 gasta 150 —la prueba de estres entera— y asi no puede
+ * repetirlo antes de 15 h; una de 100 gasta 5 y le basta el minimo.
+ */
+const FLOOR_PER_REQUEST_MS = 6 * 60 * 1000;
+const FLOOR_MIN_MS = 30 * 60 * 1000;
+const FLOOR_MAX_MS = 20 * 60 * 60 * 1000;
+
+/** Lo mismo para el boton de revisar: mas corto, porque lo pide el usuario. */
+const MANUAL_PER_REQUEST_MS = 2 * 60 * 1000;
+const MANUAL_FLOOR_MIN_MS = 3 * 60 * 1000;
+const MANUAL_FLOOR_MAX_MS = 6 * 60 * 60 * 1000;
+
+/** Lo que cuesta leer una lista: el servidor capa las paginas en 25. */
+function pagesFor(count: number | null): number {
+  return Math.max(1, Math.ceil((count ?? 0) / 25));
+}
+
+function floorFor(count: number | null, manual: boolean): number {
+  const coste = pagesFor(count) * (manual ? MANUAL_PER_REQUEST_MS : FLOOR_PER_REQUEST_MS);
+  return manual
+    ? Math.min(MANUAL_FLOOR_MAX_MS, Math.max(MANUAL_FLOOR_MIN_MS, coste))
+    : Math.min(FLOOR_MAX_MS, Math.max(FLOOR_MIN_MS, coste));
+}
+
 /** Esperas tras un bloqueo, por gravedad. */
 const COOLDOWN_SOFT_MS = 35 * 60 * 1000;
 const COOLDOWN_HARD_MS = 6 * 60 * 60 * 1000;
@@ -50,10 +83,21 @@ export interface Pending {
  */
 export type BlockKind = 'auth' | 'soft' | 'hard';
 
+/** Ultima enumeracion cerrada de una lista: cuando, y con que contador. */
+export interface EnumMark {
+  at: number;
+  count: number | null;
+}
+
 export interface SchedulerState {
   enabled: boolean;
   /** Minutos entre polls. Ver POLL_CHOICES. */
   pollMinutes: number;
+  /**
+   * El usuario eligio el intervalo a mano. Sin esto, bajar el valor por
+   * defecto no llegaria nunca a quien ya tiene la extension instalada.
+   */
+  pollChosen?: boolean;
   lastCounts: Counts | null;
   lastPollAt: number | null;
   lastSweepAt: number | null;
@@ -66,6 +110,8 @@ export interface SchedulerState {
    */
   blockedKind: BlockKind | null;
   pending: Pending | null;
+  /** Por lista: cuando se cerro la ultima enumeracion y que contador tenia. */
+  lastEnum: Partial<Record<SnapshotKind, EnumMark>>;
   /** Linea base de latencia, heredada entre tandas. */
   baseline: number | null;
   /** Ultimas lineas de bitacora, para que el popup cuente que pasa. */
@@ -88,6 +134,7 @@ const EMPTY: SchedulerState = {
   blockedReason: null,
   blockedKind: null,
   pending: null,
+  lastEnum: {},
   baseline: null,
   log: [],
 };
@@ -129,7 +176,21 @@ export async function enable(minutes?: number): Promise<SchedulerState> {
   });
 
   await log(`Vigilancia activada · poll cada ${label}`);
-  return save({ enabled: true, pollMinutes: every });
+  return save({ enabled: true, pollMinutes: every, ...(minutes !== undefined ? { pollChosen: true } : {}) });
+}
+
+/**
+ * Mueve al valor por defecto actual a quien nunca eligio intervalo. Sin esto,
+ * bajarlo no llegaria jamas a quien ya tiene la extension instalada.
+ */
+export async function adoptDefaultPoll(): Promise<boolean> {
+  const s = await getState();
+  if (s.pollChosen || s.pollMinutes === POLL_DEFAULT_MINUTES) return false;
+
+  await save({ pollMinutes: POLL_DEFAULT_MINUTES });
+  await log(`Intervalo automático: ahora se mira cada ${POLL_DEFAULT_MINUTES} min`);
+  if (s.enabled) await enable();
+  return true;
 }
 
 export async function disable(): Promise<SchedulerState> {
@@ -190,7 +251,7 @@ function cooldownForSeverity(s: Severity): { ms: number; kind: BlockKind } {
 
 /**
  * Verifica lo enumerado contra el contador. Faltar gente produce bajas falsas,
- * asi que ante desajuste se marca incompleto y se reintenta en el proximo poll.
+ * asi que leer de MENOS se descarta y se reintenta en el proximo poll.
  */
 async function reconcile(
   userId: string,
@@ -220,12 +281,64 @@ async function reconcile(
     };
   }
 
+  const real = n ?? expected;
+
+  // Leer de mas no es gente que falte: o el contador va con retraso —medido en
+  // pruebas, hasta 3,5 h— o alguien se fue durante la lectura y saldra de baja.
+  if (got > real) {
+    return {
+      ok: true,
+      counts: fresh.counts,
+      requests: 1,
+      note: `leidos ${got}, el contador decía ${real}: se acepta`,
+    };
+  }
+
   return {
     ok: false,
     counts: fresh.counts,
     requests: 1,
-    note: `leidos ${got}, el contador dice ${n ?? expected}`,
+    note: `leidos ${got}, el contador dice ${real}`,
   };
+}
+
+// ------------------------------------------------------------- bajas falsas
+
+/**
+ * Comprueba si las bajas recien detectadas siguen existiendo. Solo seguidores:
+ * una baja en «seguidos» la hizo el propio usuario, y no hay nada que dudar.
+ */
+async function verificarBajas(snap: AppendResult, budgetLeft: number, delayMs: number): Promise<number> {
+  const rec = snap.record;
+  if (rec.kind !== 'followers' || rec.id === undefined || rec.removed.length === 0) return 0;
+
+  const budget = Math.min(VERIFY_BUDGET, budgetLeft);
+  if (budget < 1) return 0;
+
+  const v = await verifyRemovals(rec.removed, { budget, delayMs });
+
+  // Lo que no dio tiempo a comprobar se marca dudoso: callarlo lo pintaria
+  // como una baja segura, que es justo el error que esto viene a quitar.
+  const verdicts = { ...v.verdicts };
+  for (const id of v.pending) verdicts[id] = 'unknown';
+  await setVerdicts(rec.id, verdicts);
+
+  const n = tally(verdicts);
+  if (n.gone > 0) {
+    await log(`${n.gone} de ${rec.removed.length} bajas eran cuentas que ya no existen`);
+  }
+
+  if (v.stopped) {
+    const cd = cooldownForSeverity(v.stopped.severity);
+    await save({
+      blockedUntil: Date.now() + cd.ms,
+      blockedReason: v.stopped.reason,
+      blockedKind: cd.kind,
+    });
+    await log(`Comprobación de bajas detenida: ${v.stopped.reason}`, 'warn');
+  }
+
+  return v.requests;
 }
 
 // ------------------------------------------------------------------- el tick
@@ -311,24 +424,47 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   const sweepDue = !state.lastSweepAt || now - state.lastSweepAt >= SWEEP_EVERY_MS;
   const queue: SnapshotKind[] = [];
 
+  /** Listas que tocaban pero cuyo suelo aun no ha pasado. */
+  const pospuesto: string[] = [];
+
   if (state.pending) {
     // Lo a medias manda: hasta cerrarlo, no hay snapshot que valga.
     queue.push(state.pending.kind);
-  } else if (opts.force || sweepDue) {
+  } else if (sweepDue) {
+    // El barrido no mira suelos: es la garantia de un dato al dia como minimo.
     queue.push('followers', 'following');
   } else {
-    const prev = state.lastCounts;
-    if (!prev || prev.followers !== c.counts.followers) queue.push('followers');
-    if (!prev || prev.following !== c.counts.following) queue.push('following');
+    for (const kind of ['followers', 'following'] as const) {
+      const count = kind === 'followers' ? c.counts.followers : c.counts.following;
+      const mark = state.lastEnum?.[kind];
+      const movido = !mark || mark.count !== count;
+
+      // Sin cambio de contador, solo el boton justifica releer la lista entera.
+      if (!movido && !opts.force) continue;
+
+      const espera = mark ? mark.at + floorFor(count, Boolean(opts.force)) - now : 0;
+      if (espera > 0) {
+        pospuesto.push(`${KIND_LABEL[kind]} en ${Math.ceil(espera / 60000)} min`);
+        continue;
+      }
+      queue.push(kind);
+    }
   }
 
   if (queue.length === 0) {
-    await log(`Sin cambios · ${c.counts.followers} seguidores, ${c.counts.following} seguidos · 1 petición`);
+    await log(
+      pospuesto.length
+        ? `Se relee ${pospuesto.join(' y ')} · 1 petición`
+        : `Sin cambios · ${c.counts.followers} seguidores, ${c.counts.following} seguidos · 1 petición`,
+    );
     return { ran: true, requests, enumerated: [], state: await getState() };
   }
 
-  const why = state.pending ? 'continuación' : opts.force ? 'manual' : sweepDue ? 'barrido diario' : 'el contador cambió';
-  await log(`Enumerando ${queue.join(' y ')} · ${why}`);
+  const why = state.pending ? 'continuación' : sweepDue ? 'barrido diario' : opts.force ? 'manual' : 'el contador cambió';
+  await log(
+    `Enumerando ${queue.join(' y ')} · ${why}` +
+      (pospuesto.length ? ` · se relee ${pospuesto.join(' y ')}` : ''),
+  );
 
   // --- Enumerar, respetando el presupuesto del disparo.
   const enumerated: SnapshotKind[] = [];
@@ -376,7 +512,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
       // Si el contador se movio durante la lectura, el bueno es el fresco.
       const counts = rec.counts ?? c.counts;
 
-      await appendSnapshot(merged, {
+      const snap = await appendSnapshot(merged, {
         kind,
         // Un desajuste significa que faltan personas. Guardar esto como
         // completo produciria bajas falsas en el proximo diff.
@@ -392,11 +528,24 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
 
       if (rec.ok) {
         enumerated.push(kind);
+
+        // La marca es del contador, no de lo leido: contra el contador es
+        // contra lo que se compara en el proximo poll.
+        const leido = kind === 'followers' ? counts.followers : counts.following;
+        await save({
+          lastEnum: { ...(await getState()).lastEnum, [kind]: { at: takenAt, count: leido } },
+        });
+
         await log(
           `${nombre}: ${merged.length} · ${res.stats.requests} peticiones` +
+            // Sin esto, la unica forma de saber donde esta el techo de una
+            // cuenta grande es que alguien se bloquee.
+            ` · p95 ${res.stats.p95} ms` +
+            (res.stats.slowdowns > 0 ? ` · frenó ${res.stats.slowdowns} veces` : '') +
             (chunks > 1 ? ` · cerrado tras ${chunks} tandas` : '') +
             (rec.note ? ` · ${rec.note}` : ''),
         );
+        requests += await verificarBajas(snap, TICK_BUDGET - requests, res.stats.finalDelayMs);
       } else {
         await log(`${nombre}: descartado, ${rec.note}. Se reintenta en el próximo poll.`, 'warn');
       }
