@@ -91,13 +91,16 @@ function retime(): void {
   if (next && !running) statusText.textContent = t(claveCuenta(), { t: until(next) });
 }
 
-/** La cuenta atrás del pie puede ser hacia la próxima revisión o hacia el
- *  final de una espera. El ticker necesita saber cuál está pintada. */
-function claveCuenta(): 'st_next' | 'st_wait' {
-  return statusText.dataset['untilKey'] === 'st_wait' ? 'st_wait' : 'st_next';
+type ClaveCuenta = 'st_next' | 'st_wait' | 'st_floor';
+
+/** La cuenta atrás del pie puede ir hacia la próxima revisión, hacia el final
+ *  de una espera o hacia la próxima lectura. El ticker necesita saber cuál. */
+function claveCuenta(): ClaveCuenta {
+  const k = statusText.dataset['untilKey'];
+  return k === 'st_wait' || k === 'st_floor' ? k : 'st_next';
 }
 
-function cuentaAtras(ts: number, clave: 'st_next' | 'st_wait'): void {
+function cuentaAtras(ts: number, clave: ClaveCuenta): void {
   statusText.dataset['until'] = String(ts);
   statusText.dataset['untilKey'] = clave;
   statusText.textContent = t(clave, { t: until(ts) });
@@ -120,13 +123,19 @@ for (const t of tabs) t.addEventListener('click', () => showTab(t.dataset['tab']
 
 function personRow(p: Profile, right: string): string {
   const anon = p.username.startsWith('id:');
+
+  // Sin username no hay perfil que abrir: Instagram no enruta por id.
+  const nombre = anon
+    ? `<span class="u">${t('unknown_account')}</span>`
+    : `<a class="u" href="https://www.instagram.com/${encodeURIComponent(p.username)}/" target="_blank" rel="noopener noreferrer" title="${esc(t('open_profile'))}">@${esc(p.username)}</a>`;
+
   return `
     <div class="person">
       <span class="av" data-id="${esc(p.id)}"${p.avatar ? ` data-url="${esc(p.avatar)}"` : ''}>${esc(
         initials(p.username),
       )}</span>
       <span class="who">
-        <span class="u">${anon ? t('unknown_account') : '@' + esc(p.username)}</span>
+        ${nombre}
         ${p.fullName ? `<span class="n">${esc(p.fullName)}</span>` : ''}
       </span>
       ${right}
@@ -283,6 +292,8 @@ function renderRelations(r: Relations | undefined): void {
            ${t('empty_mutual_b')}
          </div>`
       : `<p class="day">${esc(t('cross_header', { n: gente.length }))}</p>` +
+        // El límite se explica una vez, donde la gente pregunta por él.
+        `<p class="gap">${esc(t('cross_hint'))}</p>` +
         gente.map((p) => personRow(p, '')).join('');
 }
 
@@ -295,6 +306,12 @@ const PROBLEM = {
 } as const;
 
 let running = false;
+
+/**
+ * Cuándo se vuelve a leer la lista, si el último disparo no la leyó porque el
+ * suelo no había pasado. Sin esto, pulsar «Revisar» parece no hacer nada.
+ */
+let releeA: number | null = null;
 
 /** Último historial pintado: el botón de copiar lo necesita al pulsarlo. */
 let ultimo: HistoryResponse | null = null;
@@ -344,6 +361,14 @@ function renderStatus(h: HistoryResponse): void {
   if (espera > Date.now()) {
     statusEl.className = 'status off';
     cuentaAtras(espera, 'st_wait');
+    return;
+  }
+
+  // Un disparo que solo miró el contador no cambia la lista, y callarlo deja
+  // al usuario creyendo que el botón está roto.
+  if (releeA && releeA > Date.now()) {
+    statusEl.className = 'status on';
+    cuentaAtras(releeA, 'st_floor');
     return;
   }
 
@@ -625,7 +650,15 @@ chrome.runtime.onMessage.addListener((m: unknown) => {
       break;
     }
 
-    case 'tick-done':
+    case 'tick-done': {
+      // Solo cuando no se leyó ninguna lista: si alguna se leyó, el cambio ya
+      // se ve arriba y el pie hace mejor trabajo contando la próxima revisión.
+      const espera = b.result.postponed ?? [];
+      const leyo = (b.result.enumerated ?? []).length > 0;
+      releeA = !leyo && espera.length
+        ? Date.now() + Math.min(...espera.map((x) => x.minutes)) * 60000
+        : null;
+
       // Sin tick-start no hubo revisión: no hay barra que cerrar.
       if (running) {
         bar.style.width = '100%';
@@ -635,6 +668,7 @@ chrome.runtime.onMessage.addListener((m: unknown) => {
       loading.hidden = true;
       void refresh();
       break;
+    }
   }
 });
 

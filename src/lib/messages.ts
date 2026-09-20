@@ -1,5 +1,5 @@
 import type { SchedulerState } from './scheduler';
-import type { ChangeEvent, CaptureProgress, Counts, Relations, SnapshotKind } from './types';
+import type { ChangeEvent, CaptureProgress, Counts, Postponed, Relations, SnapshotKind } from './types';
 
 export type Msg =
   | { kind: 'capture' }
@@ -20,6 +20,8 @@ export interface TickResponse {
   skipped?: string;
   requests?: number;
   enumerated?: SnapshotKind[];
+  /** El suelo dejo alguna lista para luego: el popup lo explica. */
+  postponed?: Postponed[];
   state?: SchedulerState;
   error?: string;
 }

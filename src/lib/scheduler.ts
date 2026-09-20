@@ -4,7 +4,7 @@ import { appendSnapshot, saveProfiles, setVerdicts, type AppendResult } from './
 import { tally, verifyRemovals } from './verify';
 import { getMeta, setMeta } from './db';
 import { KIND_LABEL, POLL_CHOICES, POLL_DEFAULT_MINUTES } from './types';
-import type { CaptureProgress, Counts, Profile, SnapshotKind, StopReason } from './types';
+import type { CaptureProgress, Counts, Postponed, Profile, SnapshotKind, StopReason } from './types';
 
 /**
  * Maquina de estados de la captura pasiva, por reloj.
@@ -349,6 +349,8 @@ export interface TickResult {
   skipped?: string;
   requests: number;
   enumerated: SnapshotKind[];
+  /** Lo que el suelo dejo para luego. El popup lo explica; la bitacora tambien. */
+  postponed?: Postponed[];
   state: SchedulerState;
 }
 
@@ -425,7 +427,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   const queue: SnapshotKind[] = [];
 
   /** Listas que tocaban pero cuyo suelo aun no ha pasado. */
-  const pospuesto: string[] = [];
+  const pospuesto: Postponed[] = [];
 
   if (state.pending) {
     // Lo a medias manda: hasta cerrarlo, no hay snapshot que valga.
@@ -444,26 +446,29 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
 
       const espera = mark ? mark.at + floorFor(count, Boolean(opts.force)) - now : 0;
       if (espera > 0) {
-        pospuesto.push(`${KIND_LABEL[kind]} en ${Math.ceil(espera / 60000)} min`);
+        pospuesto.push({ kind, minutes: Math.ceil(espera / 60000) });
         continue;
       }
       queue.push(kind);
     }
   }
 
+  const enPalabras = (): string =>
+    pospuesto.map((x) => `${KIND_LABEL[x.kind]} en ${x.minutes} min`).join(' y ');
+
   if (queue.length === 0) {
     await log(
       pospuesto.length
-        ? `Se relee ${pospuesto.join(' y ')} · 1 petición`
+        ? `Se relee ${enPalabras()} · 1 petición`
         : `Sin cambios · ${c.counts.followers} seguidores, ${c.counts.following} seguidos · 1 petición`,
     );
-    return { ran: true, requests, enumerated: [], state: await getState() };
+    return { ran: true, requests, enumerated: [], postponed: pospuesto, state: await getState() };
   }
 
   const why = state.pending ? 'continuación' : sweepDue ? 'barrido diario' : opts.force ? 'manual' : 'el contador cambió';
   await log(
     `Enumerando ${queue.join(' y ')} · ${why}` +
-      (pospuesto.length ? ` · se relee ${pospuesto.join(' y ')}` : ''),
+      (pospuesto.length ? ` · se relee ${enPalabras()}` : ''),
   );
 
   // --- Enumerar, respetando el presupuesto del disparo.
@@ -585,7 +590,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   // El barrido solo cuenta si se cerraron las DOS listas.
   if (enumerated.length === 2) patch.lastSweepAt = Date.now();
 
-  return { ran: true, requests, enumerated, state: await save(patch) };
+  return { ran: true, requests, enumerated, postponed: pospuesto, state: await save(patch) };
 }
 
 function dedupe(ids: string[]): string[] {

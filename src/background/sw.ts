@@ -51,6 +51,7 @@ async function runTick(force: boolean): Promise<TickResponse> {
       ...(r.skipped !== undefined ? { skipped: r.skipped } : {}),
       requests: r.requests,
       enumerated: r.enumerated,
+      ...(r.postponed?.length ? { postponed: r.postponed } : {}),
       state: r.state,
     };
   } catch (e) {

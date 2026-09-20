@@ -48,6 +48,7 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 > • Quién no te sigue de vuelta
 > • Distingue una baja real de una cuenta suspendida o borrada
 > • Agrupa a quien te sigue y te deja de seguir una y otra vez
+> • Toca cualquier nombre y se abre su perfil de Instagram
 > • Revisión automática en segundo plano, sin que tengas que abrir nada
 > • Historial por días, para ver la evolución
 >
@@ -106,6 +107,7 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 > • Who doesn't follow you back
 > • Tells a real unfollow apart from a suspended or deleted account
 > • Groups the accounts that follow and unfollow you over and over
+> • Tap any name to open their Instagram profile
 > • Automatic background checks — nothing to open
 > • Day-by-day history so you can see the trend
 >

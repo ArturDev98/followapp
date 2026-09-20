@@ -60,6 +60,15 @@ export interface ListPage {
   cursor: string | null;
 }
 
+/**
+ * Lectura que el suelo dejo para mas tarde. Va en numeros y no en texto
+ * porque quien la pinta es el popup, y el popup tiene idioma propio.
+ */
+export interface Postponed {
+  kind: SnapshotKind;
+  minutes: number;
+}
+
 /** Por que termino una captura. */
 export type StopReason =
   | 'complete'        // se llego al final de la lista

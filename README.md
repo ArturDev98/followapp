@@ -73,6 +73,8 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | — | Semana de pruebas con conocidos | ⏳ 1 diagnóstico leído · ver `PRUEBAS.md` |
 | S4.6 | Bajas falsas y ciclos de ir y venir | ✅ hecho |
 | S4.7 | Ritmo: poll corto, suelos que escalan, frenos visibles | ✅ hecho |
+| — | **Pública en la Chrome Web Store** | ✅ v1.0.3 · 19 sep 2026 |
+| S4.8 | Enlace al perfil y el suelo explicado en el popup | ✅ v1.0.4 |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
 Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
@@ -484,15 +486,47 @@ Es la única forma de saber dónde está el techo de una cuenta grande **sin
 esperar a que alguien se bloquee**, y el dato que la semana de pruebas no podía
 producir de ninguna otra manera.
 
+### S4.8 — Lo que pidió el primer usuario de verdad
+
+La primera petición que no salió de nosotros: poder **dejar de seguir** desde la
+lista de «no te siguen». Se resolvió a medias a propósito.
+
+**El nombre de cada persona es ahora un enlace a su perfil**, en las dos listas.
+Antes la lista era inerte: veías un nombre y una foto y no podías ni mirar quién
+era. Ahora el último clic lo da el usuario, en Instagram.
+
+**Lo que no se hizo, y por qué.** Dejar de seguir desde la extensión convierte
+el motor de sólo-lectura en uno que escribe, y las acciones automatizadas de
+seguir y dejar de seguir son justo el patrón que Instagram más persigue: es el
+de las granjas de follow/unfollow. Toda la ingeniería de ritmo existe para que
+*leer* sea invisible; escribir es otra liga, y el bloqueo se lo comería el
+usuario. Además la ficha aprobada promete literalmente lo contrario. Así que la
+pestaña lo dice en una línea, donde surge la pregunta:
+
+> Toca un nombre para abrir su perfil. FollowApp nunca sigue ni deja de seguir por ti.
+
+**Y el suelo dejó de ser invisible.** Pulsar «Revisar» cuando el suelo no había
+pasado hacía el poll, no leía la lista, y no lo contaba en ninguna parte: el
+usuario veía «Revisando…», luego nada, y concluía que el botón estaba roto. En
+una cuenta de 500 seguidores el suelo del botón son 40 minutos, así que era el
+camino normal, no el raro. Ahora el pie del popup lo dice y lo cuenta hacia
+atrás:
+
+```
+Lista leída hace poco · se relee en 28 min
+```
+
+El dato viaja en minutos y no en texto, porque quien lo pinta es el popup y el
+popup tiene idioma propio. Solo sale cuando **no** se leyó ninguna lista: si
+algo se leyó, el cambio ya se ve arriba y el pie hace mejor trabajo contando
+cuándo toca la próxima.
+
 ### Para la siguiente versión
 
-Cosas conocidas que no entraron en la 1.0.3, apuntadas para no perderlas:
-
-| Qué | Por qué quedó fuera |
+| Qué | Por qué queda fuera |
 |---|---|
-| El popup no explica el suelo: pulsar «Revisar» y que no pase nada solo consta en la bitácora | Es plomería entre el service worker y la interfaz. En pruebas cerradas se cubre avisando al tester, y no compensaba retrasar la revisión de Google |
 | Reintentar los veredictos `unknown` en disparos posteriores con presupuesto sobrante | Mejora el dato 3, pero se pinta «sin confirmar», que ya es honesto |
-| El techo por encima de 3.750 seguidores | No es código: hace falta una cuenta grande que instale la 1.0.3 |
+| El techo por encima de 3.750 seguidores | No es código: hace falta una cuenta grande que instale la extensión |
 
 ### Pruebas
 

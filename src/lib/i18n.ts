@@ -37,7 +37,9 @@ const es = {
   ev_cycle: 'Entró y salió {n} veces',
   ev_unconfirmed: 'sin confirmar',
   unknown_account: 'Cuenta desconocida',
+  open_profile: 'Abrir su perfil en Instagram',
   cross_header: 'Les sigues y no te siguen · {n}',
+  cross_hint: 'Toca un nombre para abrir su perfil. FollowApp nunca sigue ni deja de seguir por ti.',
 
   scan_followers: 'Revisando tus seguidores…',
   scan_following: 'Revisando a quién sigues…',
@@ -51,6 +53,7 @@ const es = {
   st_never: 'Sin revisar todavía',
   st_paused: 'Vigilancia apagada',
   st_wait: 'En pausa · se reintenta {t}',
+  st_floor: 'Lista leída hace poco · se relee {t}',
   st_error: 'No se pudo leer el historial.',
 
   auto: 'Automático',
@@ -125,7 +128,9 @@ const en: Catalog = {
   ev_cycle: 'Came and went {n} times',
   ev_unconfirmed: 'unconfirmed',
   unknown_account: 'Unknown account',
+  open_profile: 'Open their Instagram profile',
   cross_header: "You follow them, they don't follow back · {n}",
+  cross_hint: 'Tap a name to open their profile. FollowApp never follows or unfollows for you.',
 
   scan_followers: 'Checking your followers…',
   scan_following: 'Checking who you follow…',
@@ -139,6 +144,7 @@ const en: Catalog = {
   st_never: 'Not checked yet',
   st_paused: 'Watching is off',
   st_wait: 'Paused · retrying {t}',
+  st_floor: 'List just read · reading it again {t}',
   st_error: "Couldn't read the history.",
 
   auto: 'Automatic',
