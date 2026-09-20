@@ -16,8 +16,18 @@ Corto. Un tester que recibe instrucciones largas no prueba nada.
 >    y dale a **Empezar a vigilar**.
 > 3. Ya está. Ábrela de vez en cuando a ver qué cuenta.
 >
+> Un aviso: si le das a **Revisar** y no ves que pase nada, es normal. Acaba
+> de mirar tu lista hace poco y espera un rato antes de volver a leerla —
+> cuanto más grande es la cuenta, más espera.
+>
 > Si ves algo raro —o si no ves nada en dos días— avísame y te digo cómo
 > sacarme el diagnóstico.
+
+Ese aviso del botón está ahí porque la extensión todavía no lo explica sola:
+el suelo entre lecturas solo consta en la bitácora. En una cuenta de 500
+seguidores son 40 minutos, así que es lo primero con lo que se choca alguien
+que la acaba de instalar y quiere verla funcionar. Se arregla en la próxima
+versión; mientras tanto, lo dice el mensaje.
 
 Dos cosas importan de ese mensaje: **que la fijen en la barra** (si no, el icono
 queda escondido en el menú de extensiones y nunca la abren) y **que le den al

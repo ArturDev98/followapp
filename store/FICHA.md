@@ -46,6 +46,8 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 > • Quién te dejó de seguir, con su foto y cuándo se detectó
 > • Quién empezó a seguirte
 > • Quién no te sigue de vuelta
+> • Distingue una baja real de una cuenta suspendida o borrada
+> • Agrupa a quien te sigue y te deja de seguir una y otra vez
 > • Revisión automática en segundo plano, sin que tengas que abrir nada
 > • Historial por días, para ver la evolución
 >
@@ -53,12 +55,16 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 >
 > **CÓMO FUNCIONA**
 >
-> Cada pocas horas comprueba tu número de seguidores. Eso es una sola consulta.
-> Solo si el número cambió, lee la lista completa para averiguar quién entró y
-> quién salió. Así la extensión es discreta y tu cuenta no corre riesgos.
+> Cada hora comprueba tu número de seguidores. Eso es una sola consulta. Solo
+> si el número cambió, lee la lista completa para averiguar quién entró y quién
+> salió, y espera entre lecturas lo que haga falta según lo grande que sea tu
+> cuenta. Así la extensión es discreta y tu cuenta no corre riesgos.
 >
-> Cuando alguien desaparece, te lo dice con su nombre y su foto —aunque la
-> cuenta ya no exista, porque la guardamos antes de que se fuera.
+> Cuando alguien desaparece de tu lista, comprueba si su cuenta sigue
+> existiendo antes de decirte nada: una cuenta suspendida o borrada también
+> desaparece, y eso no es lo mismo que alguien que te deja de seguir. Si de
+> verdad se fue, te lo dice con su nombre y su foto, guardados antes de que
+> se fuera.
 >
 > ─────────────────
 >
@@ -98,6 +104,8 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 > • Who unfollowed you, with their picture and when it was detected
 > • Who started following you
 > • Who doesn't follow you back
+> • Tells a real unfollow apart from a suspended or deleted account
+> • Groups the accounts that follow and unfollow you over and over
 > • Automatic background checks — nothing to open
 > • Day-by-day history so you can see the trend
 >
@@ -105,12 +113,15 @@ Máximo 132 caracteres. Es lo que se ve en los resultados de búsqueda.
 >
 > **HOW IT WORKS**
 >
-> Every few hours it checks your follower count. That is a single request. Only
-> if the number changed does it read the full list to find out who joined and
-> who left. That keeps the extension quiet and your account safe.
+> Every hour it checks your follower count. That is a single request. Only if
+> the number changed does it read the full list to find out who joined and who
+> left, waiting between reads for as long as the size of your account calls
+> for. That keeps the extension quiet and your account safe.
 >
-> When someone disappears, you get their name and picture — even if the account
-> is gone, because we saved it before they left.
+> When someone disappears from your list, it checks whether their account still
+> exists before telling you anything: a suspended or deleted account disappears
+> too, and that is not the same as someone unfollowing you. If they really
+> left, you get their name and picture, saved before they went.
 >
 > ─────────────────
 >
@@ -160,9 +171,15 @@ Y confirmar las tres casillas finales:
 
 ## Visibilidad
 
-**No listada** para la primera versión. Pasa la revisión completa e instala por
-enlace, pero no aparece en búsquedas. Se cambia a pública con un clic cuando
-haya rodaje.
+**Pública** desde la 1.0.3. Las tres primeras versiones fueron no listadas —se
+instalaban por enlace y no salían en búsquedas— para pasar la revisión sin
+exponerse mientras el motor no había corrido fuera de la máquina del autor.
+Con seis días de datos reales sin un solo bloqueo, ese motivo dejó de aplicar.
+
+Al listarla, la descripción larga deja de ser un trámite: es lo primero que lee
+alguien que no te conoce, y compite con herramientas que piden el ZIP de Meta o
+directamente la contraseña. Los tres «sin» —sin contraseña, sin ZIP, sin
+servidores— van arriba por eso.
 
 ## Capturas
 

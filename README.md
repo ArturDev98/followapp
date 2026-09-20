@@ -484,6 +484,16 @@ Es la única forma de saber dónde está el techo de una cuenta grande **sin
 esperar a que alguien se bloquee**, y el dato que la semana de pruebas no podía
 producir de ninguna otra manera.
 
+### Para la siguiente versión
+
+Cosas conocidas que no entraron en la 1.0.3, apuntadas para no perderlas:
+
+| Qué | Por qué quedó fuera |
+|---|---|
+| El popup no explica el suelo: pulsar «Revisar» y que no pase nada solo consta en la bitácora | Es plomería entre el service worker y la interfaz. En pruebas cerradas se cubre avisando al tester, y no compensaba retrasar la revisión de Google |
+| Reintentar los veredictos `unknown` en disparos posteriores con presupuesto sobrante | Mejora el dato 3, pero se pinta «sin confirmar», que ya es honesto |
+| El techo por encima de 3.750 seguidores | No es código: hace falta una cuenta grande que instale la 1.0.3 |
+
 ### Pruebas
 
 La lógica que no se puede verificar a ojo se prueba compilando el módulo suelto
