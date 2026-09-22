@@ -75,6 +75,7 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | S4.7 | Ritmo: poll corto, suelos que escalan, frenos visibles | ✅ hecho |
 | — | **Pública en la Chrome Web Store** | ✅ v1.0.3 · 19 sep 2026 |
 | S4.8 | Enlace al perfil y el suelo explicado en el popup | ✅ v1.0.4 |
+| — | La reconciliación descartaba todas las lecturas de seguidores | ✅ v1.0.5 |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
 Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
@@ -520,6 +521,40 @@ El dato viaja en minutos y no en texto, porque quien lo pinta es el popup y el
 popup tiene idioma propio. Solo sale cuando **no** se leyó ninguna lista: si
 algo se leyó, el cambio ya se ve arriba y el pie hace mejor trabajo contando
 cuándo toca la próxima.
+
+### 1.0.5 — La lista buena se estaba tirando a la basura
+
+El primer usuario que informó de algo roto lo describió así: «la lectura se
+hace bien, pero nunca me avisa de quién me deja de seguir». Su diagnóstico
+traía la causa:
+
+```
+Seguidores: descartado, leidos 104, el contador dice 105
+Seguidores: descartado, leidos 103, el contador dice 104
+```
+
+**Siempre exactamente uno de menos.** La reconciliación descartaba la lista de
+seguidores en cada intento, así que **nunca se guardaba un snapshot completo**
+— y sin dos snapshots completos no hay diff, no hay bajas, no hay nada que
+enseñar. La extensión leía bien, medía bien, y tiraba el resultado.
+
+La regla decía que leer de menos significa que falta gente. Es falso. El
+contador de Instagram va con retraso **en las dos direcciones**: cuando alguien
+se va, la lista se entera antes que el contador. Por eso la diferencia era
+siempre de uno, y por eso nunca convergía: cada nueva baja volvía a abrir el
+hueco antes de que el contador cerrara el anterior.
+
+Ahora solo se descarta cuando falta **una página entera o más**. Es el único
+hueco que delata de verdad una paginación truncada, porque el servidor pagina
+de 25 en 25; por debajo de eso, el sospechoso es el contador, no la lista.
+
+**Y un segundo fallo escondido debajo del primero.** El barrido diario marcaba
+su fecha solo si se cerraban las dos listas. Como la de seguidores fallaba
+siempre, esa fecha **no se escribía nunca**, así que `sweepDue` estaba
+permanentemente encendido: cada poll se convertía en un barrido completo de las
+dos listas, saltándose los suelos que acabábamos de construir. En la bitácora
+del usuario se ve, con dos «barrido diario» separados por un minuto. Ahora la
+fecha se escribe si las dos listas se **leyeron**, se acepten o no.
 
 ### Para la siguiente versión
 

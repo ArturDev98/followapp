@@ -76,7 +76,8 @@ mandarlo automáticamente, y ese es justamente el argumento de venta.
 | `en espera ... bloqueo duro` | Instagram frenó de verdad. Anotar el tamaño de la cuenta |
 | `latencia base` subiendo entre informes | El gobernador está midiendo deriva: es la señal que buscamos |
 | `a medias: ... en N tandas` | Cuenta grande troceando. Anotar cuántas tandas necesita |
-| `leidos X, el contador dice Y` | Desajuste de reconciliación: el caso que produce bajas falsas |
+| `leidos X, el contador dice Y: se acepta` | Normal: el contador va con retraso respecto a la lista |
+| `...: faltan demasiados` | Falta una página entera o más: ahí sí se descarta la lectura |
 | `bajas: N · M ya no existían` | **El dato 3**: cuántas de las bajas no eran bajas |
 | `rachas de ir y venir: N` | Cuentas que entran y salen: cuánto ruido quita el agrupado |
 | `p95 X ms` en cada lectura | Sube respecto a la latencia base = Instagram está frenando |

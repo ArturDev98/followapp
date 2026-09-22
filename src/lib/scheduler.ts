@@ -250,8 +250,22 @@ function cooldownForSeverity(s: Severity): { ms: number; kind: BlockKind } {
 // ---------------------------------------------------------- reconciliacion
 
 /**
- * Verifica lo enumerado contra el contador. Faltar gente produce bajas falsas,
- * asi que leer de MENOS se descarta y se reintenta en el proximo poll.
+ * Una lectura corta de menos de una pagina es el contador, no gente que falte:
+ * una paginacion truncada pierde una pagina entera, y el servidor capa en 25.
+ */
+const SHORTFALL_MAX = 25;
+
+/**
+ * Leer de mas nunca es gente que falte; leer de menos por poco tampoco.
+ * Solo un hueco de una pagina o mas delata una paginacion truncada.
+ */
+export function aceptable(got: number, real: number): boolean {
+  return real - got < SHORTFALL_MAX;
+}
+
+/**
+ * Verifica lo enumerado contra el contador, que es una referencia floja: se
+ * descarta solo cuando falta tanta gente que no puede ser retraso del contador.
  */
 async function reconcile(
   userId: string,
@@ -283,14 +297,15 @@ async function reconcile(
 
   const real = n ?? expected;
 
-  // Leer de mas no es gente que falte: o el contador va con retraso —medido en
-  // pruebas, hasta 3,5 h— o alguien se fue durante la lectura y saldra de baja.
-  if (got > real) {
+  // El contador va con retraso en las dos direcciones: cuando alguien se va, la
+  // lista se entera antes. Descartar por uno dejaba la extension sin producir
+  // un solo snapshot completo, y sin snapshots no hay diff que enseñar.
+  if (aceptable(got, real)) {
     return {
       ok: true,
       counts: fresh.counts,
       requests: 1,
-      note: `leidos ${got}, el contador decía ${real}: se acepta`,
+      note: `leidos ${got}, el contador dice ${real}: se acepta la lista`,
     };
   }
 
@@ -298,7 +313,7 @@ async function reconcile(
     ok: false,
     counts: fresh.counts,
     requests: 1,
-    note: `leidos ${got}, el contador dice ${real}`,
+    note: `leidos ${got}, el contador dice ${real}: faltan demasiados`,
   };
 }
 
@@ -473,6 +488,8 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
 
   // --- Enumerar, respetando el presupuesto del disparo.
   const enumerated: SnapshotKind[] = [];
+  /** Listas leidas enteras, se aceptara el snapshot o no. */
+  const attempted: SnapshotKind[] = [];
   let baseline = state.baseline;
 
   for (const kind of queue) {
@@ -500,6 +517,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     const merged = pend ? dedupe([...pend.ids, ...res.ids]) : res.ids;
 
     if (res.complete) {
+      attempted.push(kind);
       const chunks = (pend?.chunks ?? 0) + 1;
       const nombre = kind === 'followers' ? 'Seguidores' : 'Seguidos';
       const esperado = kind === 'followers' ? c.counts.followers : c.counts.following;
@@ -587,8 +605,10 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   }
 
   const patch: Partial<SchedulerState> = { baseline };
-  // El barrido solo cuenta si se cerraron las DOS listas.
-  if (enumerated.length === 2) patch.lastSweepAt = Date.now();
+  // El barrido cuenta si se LEYERON las dos listas. Atarlo a que ademas se
+  // aceptaran dejaba `sweepDue` encendido para siempre en cuanto una fallaba:
+  // cada poll se convertia en un barrido completo y los suelos no pintaban nada.
+  if (attempted.length === 2) patch.lastSweepAt = Date.now();
 
   return { ran: true, requests, enumerated, postponed: pospuesto, state: await save(patch) };
 }
