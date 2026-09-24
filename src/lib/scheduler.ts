@@ -1,5 +1,5 @@
 import { readUserId, type Severity } from './http';
-import { captureCounts, captureList } from './capture';
+import { captureCounts, captureList, captureUsername } from './capture';
 import { appendSnapshot, saveProfiles, setVerdicts, type AppendResult } from './snapshots';
 import { tally, verifyRemovals } from './verify';
 import { getMeta, setMeta } from './db';
@@ -48,6 +48,9 @@ const MANUAL_PER_REQUEST_MS = 2 * 60 * 1000;
 const MANUAL_FLOOR_MIN_MS = 3 * 60 * 1000;
 const MANUAL_FLOOR_MAX_MS = 6 * 60 * 60 * 1000;
 
+/** El poll y la marca de lectura no caen en el mismo minuto: sin margen, el suelo se come un poll entero. */
+const FLOOR_SLACK_MS = 5 * 60 * 1000;
+
 /** Lo que cuesta leer una lista: el servidor capa las paginas en 25. */
 function pagesFor(count: number | null): number {
   return Math.max(1, Math.ceil((count ?? 0) / 25));
@@ -63,6 +66,13 @@ function floorFor(count: number | null, manual: boolean): number {
 /** Esperas tras un bloqueo, por gravedad. */
 const COOLDOWN_SOFT_MS = 35 * 60 * 1000;
 const COOLDOWN_HARD_MS = 6 * 60 * 60 * 1000;
+
+/** Tras un 429 del contador no se le vuelve a pedir en este rato; se dobla en cada recaída. */
+const COUNTS_DOWN_MS = 6 * 60 * 60 * 1000;
+const COUNTS_DOWN_MAX_MS = 24 * 60 * 60 * 1000;
+
+/** Sin contador cada revisión cuesta la lista entera: nunca más a menudo que esto. */
+const BLIND_FLOOR_MIN_MS = 3 * 60 * 60 * 1000;
 
 // -------------------------------------------------------------------- estado
 
@@ -87,6 +97,15 @@ export type BlockKind = 'auth' | 'soft' | 'hard';
 export interface EnumMark {
   at: number;
   count: number | null;
+}
+
+/** El contador no responde pero la lista sí: mientras dure, se lee la lista sin él. */
+export interface CountsDown {
+  since: number;
+  /** Cuándo se le vuelve a pedir. */
+  until: number;
+  streak: number;
+  reason: string;
 }
 
 export interface SchedulerState {
@@ -114,6 +133,9 @@ export interface SchedulerState {
   lastEnum: Partial<Record<SnapshotKind, EnumMark>>;
   /** Linea base de latencia, heredada entre tandas. */
   baseline: number | null;
+  countsDown: CountsDown | null;
+  /** Lectura corta rechazada sin contador: si la siguiente coincide, la bajada era real. */
+  shortRead: Partial<Record<SnapshotKind, number>>;
   /** Ultimas lineas de bitacora, para que el popup cuente que pasa. */
   log: LogEntry[];
 }
@@ -136,6 +158,8 @@ const EMPTY: SchedulerState = {
   pending: null,
   lastEnum: {},
   baseline: null,
+  countsDown: null,
+  shortRead: {},
   log: [],
 };
 
@@ -317,15 +341,47 @@ async function reconcile(
   };
 }
 
+/** Dos lecturas seguidas de una lista que no cambia no difieren más que esto. */
+const SHORT_READ_MATCH = 5;
+
+/**
+ * Sin contador, la referencia es la lectura aceptada anterior. Rechazar para
+ * siempre una bajada real atascaría la lista: dos lecturas cortas que coinciden valen.
+ */
+export function reconcileBlind(
+  got: number,
+  prev: number | null,
+  short: number | undefined,
+): { ok: boolean; note: string } {
+  if (prev === null || aceptable(got, prev)) {
+    return { ok: true, note: prev === null || prev === got ? '' : `sin contador, antes ${prev}` };
+  }
+  if (short !== undefined && Math.abs(got - short) < SHORT_READ_MATCH) {
+    return { ok: true, note: `sin contador, dos lecturas seguidas dan ${got}: se acepta` };
+  }
+  return { ok: false, note: `leidos ${got}, la lectura anterior tenia ${prev}: faltan demasiados` };
+}
+
 // ------------------------------------------------------------- bajas falsas
 
 /**
  * Comprueba si las bajas recien detectadas siguen existiendo. Solo seguidores:
  * una baja en «seguidos» la hizo el propio usuario, y no hay nada que dudar.
  */
-async function verificarBajas(snap: AppendResult, budgetLeft: number, delayMs: number): Promise<number> {
+async function verificarBajas(
+  snap: AppendResult,
+  budgetLeft: number,
+  delayMs: number,
+  blind: boolean,
+): Promise<number> {
   const rec = snap.record;
   if (rec.kind !== 'followers' || rec.id === undefined || rec.removed.length === 0) return 0;
+
+  // Comprobar usa el mismo endpoint que el contador: si está caído, quedan dudosas.
+  if (blind) {
+    await setVerdicts(rec.id, Object.fromEntries(rec.removed.map((id) => [id, 'unknown' as const])));
+    return 0;
+  }
 
   const budget = Math.min(VERIFY_BUDGET, budgetLeft);
   if (budget < 1) return 0;
@@ -410,32 +466,57 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
   // A partir de aquí sí va a salir tráfico: ahora se puede anunciar.
   opts.onStart?.();
 
-  const username = (await getMeta<string>('username')) ?? undefined;
+  let username = (await getMeta<string>('username')) ?? undefined;
   let requests = 0;
 
-  // --- La peticion barata. Una sola, y trae los dos contadores.
-  const c = await captureCounts(userId, username);
-  requests++;
-  if (c.username) await setMeta('username', c.username);
+  /** Sin contador: cada lista se lee cuando pasa su suelo, y la referencia es la lectura anterior. */
+  let blind = Boolean(state.countsDown && state.countsDown.until > now);
+  let counts: Counts | null = null;
 
-  if (!c.counts) {
-    const cd = cooldownForSeverity(c.severity);
-    const s = await save({
-      blockedUntil: now + cd.ms,
-      blockedReason: c.detail,
-      blockedKind: cd.kind,
-    });
-    await log(`Poll falló: ${c.detail}`, 'bad');
-    return { ran: false, skipped: c.detail, requests, enumerated: [], state: s };
+  // --- La peticion barata. Una sola, y trae los dos contadores.
+  if (!blind) {
+    const c = await captureCounts(userId, username);
+    requests++;
+    if (c.username) {
+      username = c.username;
+      await setMeta('username', c.username);
+    }
+
+    if (c.counts) {
+      counts = c.counts;
+      if (state.countsDown) await log('El contador vuelve a responder');
+      await save({
+        lastPollAt: now,
+        lastCounts: c.counts,
+        blockedUntil: null,
+        blockedReason: null,
+        blockedKind: null,
+        countsDown: null,
+      });
+    } else if (c.severity === 'soft' || c.severity === 'shape') {
+      // Un 429 puede ser solo de este endpoint (así murió web_profile_info).
+      // La lista se prueba igual: si el freno es de la cuenta, la bloqueará ella.
+      const streak = (state.countsDown?.streak ?? 0) + 1;
+      const ms = Math.min(COUNTS_DOWN_MS * 2 ** (streak - 1), COUNTS_DOWN_MAX_MS);
+      await save({
+        countsDown: { since: state.countsDown?.since ?? now, until: now + ms, streak, reason: c.detail },
+      });
+      await log(`Contador sin respuesta (${c.detail}): se lee la lista sin él`, 'warn');
+      blind = true;
+    } else {
+      const cd = cooldownForSeverity(c.severity);
+      const s = await save({
+        blockedUntil: now + cd.ms,
+        blockedReason: c.detail,
+        blockedKind: cd.kind,
+      });
+      await log(`Poll falló: ${c.detail}`, 'bad');
+      return { ran: false, skipped: c.detail, requests, enumerated: [], state: s };
+    }
   }
 
-  await save({
-    lastPollAt: now,
-    lastCounts: c.counts,
-    blockedUntil: null,
-    blockedReason: null,
-    blockedKind: null,
-  });
+  const contador = (kind: SnapshotKind, from: Counts | null = counts): number | null =>
+    from ? (kind === 'followers' ? from.followers : from.following) : null;
 
   // --- Que toca enumerar.
   const sweepDue = !state.lastSweepAt || now - state.lastSweepAt >= SWEEP_EVERY_MS;
@@ -452,15 +533,19 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     queue.push('followers', 'following');
   } else {
     for (const kind of ['followers', 'following'] as const) {
-      const count = kind === 'followers' ? c.counts.followers : c.counts.following;
       const mark = state.lastEnum?.[kind];
-      const movido = !mark || mark.count !== count;
+      const count = blind ? mark?.count ?? null : contador(kind);
+      // A ciegas no se sabe si algo se movió: decide el suelo.
+      const movido = blind || !mark || mark.count !== count;
 
       // Sin cambio de contador, solo el boton justifica releer la lista entera.
       if (!movido && !opts.force) continue;
 
-      const espera = mark ? mark.at + floorFor(count, Boolean(opts.force)) - now : 0;
-      if (espera > 0) {
+      const suelo = blind && !opts.force
+        ? Math.max(BLIND_FLOOR_MIN_MS, floorFor(count, false))
+        : floorFor(count, Boolean(opts.force));
+      const espera = mark ? mark.at + suelo - now : 0;
+      if (espera > (opts.force ? 0 : FLOOR_SLACK_MS)) {
         pospuesto.push({ kind, minutes: Math.ceil(espera / 60000) });
         continue;
       }
@@ -472,15 +557,36 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     pospuesto.map((x) => `${KIND_LABEL[x.kind]} en ${x.minutes} min`).join(' y ');
 
   if (queue.length === 0) {
+    const coste = requests === 1 ? '1 petición' : `${requests} peticiones`;
     await log(
       pospuesto.length
-        ? `Se relee ${enPalabras()} · 1 petición`
-        : `Sin cambios · ${c.counts.followers} seguidores, ${c.counts.following} seguidos · 1 petición`,
+        ? `Se relee ${enPalabras()} · ${coste}`
+        : `Sin cambios · ${counts?.followers} seguidores, ${counts?.following} seguidos · ${coste}`,
     );
     return { ran: true, requests, enumerated: [], postponed: pospuesto, state: await getState() };
   }
 
-  const why = state.pending ? 'continuación' : sweepDue ? 'barrido diario' : opts.force ? 'manual' : 'el contador cambió';
+  // Sin contador tampoco llega el nombre propio. Se pide solo cuando ya toca gastar peticiones.
+  if (blind && !username) {
+    const u = await captureUsername(userId);
+    requests++;
+    if (u.username) {
+      username = u.username;
+      await setMeta('username', u.username);
+    } else {
+      await log(`Sin nombre de usuario: ${u.detail}`, 'warn');
+    }
+  }
+
+  const why = state.pending
+    ? 'continuación'
+    : sweepDue
+      ? 'barrido diario'
+      : opts.force
+        ? 'manual'
+        : blind
+          ? 'sin contador'
+          : 'el contador cambió';
   await log(
     `Enumerando ${queue.join(' y ')} · ${why}` +
       (pospuesto.length ? ` · se relee ${enPalabras()}` : ''),
@@ -501,8 +607,8 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     const res = await captureList(userId, kind, {
       budget: left,
       cursor: pend?.cursor,
-      username: c.username ?? username,
-      counts: c.counts,
+      username,
+      counts,
       governor: { baseline },
       onProgress: opts.onProgress,
     });
@@ -520,20 +626,17 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
       attempted.push(kind);
       const chunks = (pend?.chunks ?? 0) + 1;
       const nombre = kind === 'followers' ? 'Seguidores' : 'Seguidos';
-      const esperado = kind === 'followers' ? c.counts.followers : c.counts.following;
-
-      const rec = await reconcile(
-        userId,
-        kind,
-        merged.length,
-        esperado,
-        c.username ?? username,
-        TICK_BUDGET - requests,
-      );
+      const rec = blind
+        ? {
+            ...reconcileBlind(merged.length, state.lastEnum?.[kind]?.count ?? null, state.shortRead?.[kind]),
+            counts: null,
+            requests: 0,
+          }
+        : await reconcile(userId, kind, merged.length, contador(kind), username, TICK_BUDGET - requests);
       requests += rec.requests;
 
       // Si el contador se movio durante la lectura, el bueno es el fresco.
-      const counts = rec.counts ?? c.counts;
+      const snapCounts = rec.counts ?? counts;
 
       const snap = await appendSnapshot(merged, {
         kind,
@@ -543,7 +646,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
         // Una lista leida a lo largo de varios disparos pudo cambiar por el
         // camino: el snapshot es valido pero el diff puede arrastrar drift.
         chunked: chunks > 1,
-        counts,
+        counts: snapCounts,
         takenAt,
       });
 
@@ -553,10 +656,17 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
         enumerated.push(kind);
 
         // La marca es del contador, no de lo leido: contra el contador es
-        // contra lo que se compara en el proximo poll.
-        const leido = kind === 'followers' ? counts.followers : counts.following;
+        // contra lo que se compara en el proximo poll. A ciegas no hay otra.
+        const leido = blind ? merged.length : contador(kind, snapCounts);
+        const st = await getState();
+        const { [kind]: _, ...shortRead } = st.shortRead;
         await save({
-          lastEnum: { ...(await getState()).lastEnum, [kind]: { at: takenAt, count: leido } },
+          lastEnum: { ...st.lastEnum, [kind]: { at: takenAt, count: leido } },
+          shortRead,
+          // La cabecera del popup enseña esto: sin contador, lo leído es lo más fresco.
+          ...(blind
+            ? { lastCounts: { followers: null, following: null, ...st.lastCounts, [kind]: merged.length } }
+            : {}),
         });
 
         await log(
@@ -568,8 +678,9 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
             (chunks > 1 ? ` · cerrado tras ${chunks} tandas` : '') +
             (rec.note ? ` · ${rec.note}` : ''),
         );
-        requests += await verificarBajas(snap, TICK_BUDGET - requests, res.stats.finalDelayMs);
+        requests += await verificarBajas(snap, TICK_BUDGET - requests, res.stats.finalDelayMs, blind);
       } else {
+        if (blind) await save({ shortRead: { ...(await getState()).shortRead, [kind]: merged.length } });
         await log(`${nombre}: descartado, ${rec.note}. Se reintenta en el próximo poll.`, 'warn');
       }
     } else if (res.cursor) {

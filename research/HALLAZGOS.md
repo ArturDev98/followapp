@@ -189,3 +189,54 @@ Si la suposición falla, el error cae del lado seguro por construcción: un 200
 con forma rara se marca `unknown` y se pinta «sin confirmar», nunca al revés.
 **Test**: guardar el id de una cuenta que se sepa suspendida y pedir ese
 endpoint con sesión válida.
+
+---
+
+## 7. `users/{id}/info/` cortado para una sesión (24 sep 2026)
+
+La cuenta del autor (101 seguidores, 1.0.5 con poll cada hora) empezó a
+recibir 429 en el poll el 23/9 a las 14:56, tras un día de ~25 peticiones.
+Siguió así en cada intento, **también tras 15 h sin una sola petición**.
+Un freno por ritmo no aguanta eso.
+
+Prueba lado a lado desde la consola de instagram.com, misma sesión, 3 s de
+diferencia:
+
+| Endpoint | Resultado |
+|---|---|
+| `users/{id}/info/` | **429 · 205 ms · `text/html` · cuerpo vacío** |
+| `friendships/{id}/followers/` | 200 · 395 ms · 24 usuarios con cursor |
+
+Sin sesión, desde la misma IP, `info/` responde 302 al login en 650 ms, y
+`web_profile_info` sigue dando 429 en 59 ms con `text/plain`. Así que no es
+un corte global del endpoint como el de `web_profile_info`: es **por sesión**,
+con la misma firma (rápido, sin JSON, sin `please_wait`), y la lista sigue viva.
+
+Esto tumba la regla de «ante un 429, parar: otro endpoint no lo arregla».
+La extensión se quedaba atascada para siempre: sin contador nunca pasaba a
+leer la lista, y reintentaba el endpoint muerto cada hora.
+
+**Qué hace ahora el scheduler:** si el contador da 429 o una forma rara, lee
+la lista sin él. Deja de pedir el contador durante 6 h (luego 12 h, con tope
+de 24 h) y relee cada lista como mucho cada 3 h, o cuando el usuario pulsa el
+botón. Mientras tanto, la referencia para detectar una paginación truncada
+es la lectura aceptada anterior. Las bajas quedan sin confirmar, porque
+comprobarlas usa ese mismo endpoint. Si el freno es de toda la cuenta, la
+propia lista da 429 y se bloquea como siempre.
+
+**El nombre propio** también llegaba solo por `info/`: una instalación nueva
+con el contador caído enseñaba «—». Probados con la misma sesión:
+
+| Endpoint | Resultado |
+|---|---|
+| `accounts/current_user/?edit=true` | 200 pero HTML: la página, no la API |
+| `accounts/edit/web_form_data/` | ✅ 200 · 1196 ms · `form_data.username` |
+| `feed/user/{id}/?count=1` | 200 pero HTML |
+
+`web_form_data` queda de respaldo: se pide una vez, solo a ciegas y solo si
+falta el nombre. Trae también correo y teléfono; se lee el nombre y nada más.
+
+**Abierto:** si Meta está retirando `info/` del cliente web para todos (sería
+el segundo endpoint de contador que muere) o solo para algunas sesiones.
+El diagnóstico ya imprime `contador: caído desde ...`: si aparece en los
+testers, es general.

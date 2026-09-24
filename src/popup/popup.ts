@@ -463,6 +463,12 @@ function diagText(h: HistoryResponse): string {
   if (s?.blockedUntil && s.blockedUntil > Date.now()) {
     L.push(`en espera hasta ${cuando(s.blockedUntil)} · ${s.blockedReason ?? ''}`);
   }
+  if (s?.countsDown) {
+    L.push(
+      `contador: caído desde ${cuando(s.countsDown.since)} · ${s.countsDown.reason} · ` +
+        `se reprueba ${cuando(s.countsDown.until)} (vez ${s.countsDown.streak})`,
+    );
+  }
   if (h.problem) L.push(`problema: ${h.problem}`);
 
   if (s?.log.length) {

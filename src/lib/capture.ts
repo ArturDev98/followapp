@@ -1,4 +1,4 @@
-import { countsAdapters, pageAdapters, runAdapters, type AdapterCtx } from './endpoints';
+import { countsAdapters, pageAdapters, runAdapters, usernameAdapters, type AdapterCtx } from './endpoints';
 import { Governor, sleep, type GovernorOpts } from './throttle';
 import type { Severity } from './http';
 import type {
@@ -76,6 +76,12 @@ export async function captureCounts(
     detail: 'ok',
     severity: 'ok',
   };
+}
+
+/** El nombre propio cuando el contador no lo trae. Una petición. */
+export async function captureUsername(userId: string): Promise<{ username: string | null; detail: string }> {
+  const out = await runAdapters(usernameAdapters, { userId }, undefined, () => {});
+  return { username: out.value, detail: out.value ? 'ok' : out.signal.reason };
 }
 
 /**

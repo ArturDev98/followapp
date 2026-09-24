@@ -74,6 +74,7 @@ mandarlo automáticamente, y ese es justamente el argumento de venta.
 | `vigilancia: apagada` | Nunca le dio al botón. No es un fallo de la extensión |
 | `snapshots: 0` con vigilancia activa | La captura no llegó a terminar: mirar la bitácora |
 | `en espera ... bloqueo duro` | Instagram frenó de verdad. Anotar el tamaño de la cuenta |
+| `contador: caído desde ...` | Instagram cortó el endpoint del contador para esa sesión; la extensión lee la lista sin él. Anotar la fecha y si vuelve solo |
 | `latencia base` subiendo entre informes | El gobernador está midiendo deriva: es la señal que buscamos |
 | `a medias: ... en N tandas` | Cuenta grande troceando. Anotar cuántas tandas necesita |
 | `leidos X, el contador dice Y: se acepta` | Normal: el contador va con retraso respecto a la lista |

@@ -76,6 +76,7 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | — | **Pública en la Chrome Web Store** | ✅ v1.0.3 · 19 sep 2026 |
 | S4.8 | Enlace al perfil y el suelo explicado en el popup | ✅ v1.0.4 |
 | — | La reconciliación descartaba todas las lecturas de seguidores | ✅ v1.0.5 |
+| — | Sin contador, la extensión se quedaba parada para siempre | ✅ v1.0.6 |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
 Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
@@ -555,6 +556,49 @@ permanentemente encendido: cada poll se convertía en un barrido completo de las
 dos listas, saltándose los suelos que acabábamos de construir. En la bitácora
 del usuario se ve, con dos «barrido diario» separados por un minuto. Ahora la
 fecha se escribe si las dos listas se **leyeron**, se acepten o no.
+
+### 1.0.6 — Sin contador, la extensión se quedaba parada para siempre
+
+El 23 de septiembre el poll de la cuenta del autor empezó a recibir 429, hora
+tras hora, y siguió así **tras 15 h sin una sola petición**. Un freno por
+ritmo no aguanta eso. La prueba lado a lado, con la misma sesión, lo aclaró:
+
+```
+info: HTTP 429 · 205 ms · text/html ·
+followers: HTTP 200 · 395 ms · application/json · 24 usuarios, cursor=true
+```
+
+Instagram cortó `users/{id}/info/` **para esa sesión**, con la misma firma con
+la que murió `web_profile_info` (rápido, sin JSON), mientras la lista seguía
+viva. La regla «ante un 429, parar: otro endpoint no lo arregla» dejaba la
+extensión atascada: sin contador nunca pasaba a leer la lista, y reintentaba
+el endpoint muerto cada hora. El detalle está en `research/HALLAZGOS.md` §7.
+
+Ahora, si el contador da 429 o una forma rara, se lee **la lista sin él**:
+
+- El contador no se vuelve a pedir en 6 h; si sigue caído, 12 h, y luego 24 h
+  como tope. Cuando vuelve, todo regresa solo al modo normal.
+- Cada lista se relee como mucho cada 3 h, o cuando el usuario pulsa el botón.
+  Para una cuenta de 100 seguidores son 7 peticiones cada 3 h.
+- Para detectar una paginación truncada, la referencia pasa a ser la lectura
+  aceptada anterior. Si falta una página entera, se descarta; si la lectura
+  siguiente da lo mismo, la bajada era real y se acepta. Sin esa segunda
+  oportunidad, una purga de verdad atascaría la lista para siempre.
+- Las bajas salen «sin confirmar»: comprobarlas usa el mismo endpoint caído.
+- Si el freno es de la cuenta entera, la propia lista da 429 y se bloquea como
+  siempre.
+
+**El nombre propio también venía de `info/`**, y una instalación nueva con el
+contador caído enseñaba «—». Se pide una vez a `accounts/edit/web_form_data/`,
+que trae el nombre junto con correo y teléfono; se lee el nombre y nada más.
+
+**Y un margen en los suelos.** El poll suena un minuto antes de que venza el
+suelo de la última lectura, porque la marca se apunta al terminar de leer. Sin
+margen, un suelo de 3 h se convertía en 4. Ahora el poll automático lee si al
+suelo le quedan 5 min o menos; el botón no usa el margen.
+
+El diagnóstico imprime `contador: caído desde ...` mientras dura. Si aparece en
+los testers, el corte es general y no de una sola sesión.
 
 ### Para la siguiente versión
 

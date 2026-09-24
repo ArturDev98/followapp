@@ -30,8 +30,8 @@ const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
 export const countsAdapters: Adapter<Counts & { username?: string }>[] = [
   {
-    // Primario. Medido en ~1,1 s. Trae los dos contadores de una vez, que es
-    // lo que hace viable la estrategia de poll barato.
+    // Primario: los dos contadores en una petición. Desde el 24/9/2026 da 429 de
+    // edge a alguna sesión con la lista viva; el scheduler sigue sin él (HALLAZGOS §7).
     id: 'users/{id}/info',
     url: (ctx) => `${IG_ORIGIN}/api/v1/users/${ctx.userId}/info/`,
     parse: (body) => {
@@ -66,6 +66,21 @@ export const countsAdapters: Adapter<Counts & { username?: string }>[] = [
       const following = num(fl?.count);
       if (followers === null && following === null) return null;
       return { followers, following };
+    },
+  },
+];
+
+// ------------------------------------------------------------ nombre propio
+
+/** Solo hace falta si `info/` está caído: las listas no traen el nombre de uno mismo. */
+export const usernameAdapters: Adapter<string>[] = [
+  {
+    // Medido el 24/9/2026: 200 en ~1,2 s. Trae también correo y teléfono: solo se lee el nombre.
+    id: 'accounts/edit/web_form_data',
+    url: () => `${IG_ORIGIN}/api/v1/accounts/edit/web_form_data/`,
+    parse: (body) => {
+      const u = (body as { form_data?: { username?: unknown } } | null)?.form_data?.username;
+      return typeof u === 'string' && u !== '' ? u : null;
     },
   },
 ];
@@ -162,7 +177,8 @@ export async function runAdapters<T>(
     const signal = classify(res);
     last = signal;
 
-    // Throttle, auth o fallo de red: parar. Otro endpoint no arregla esto.
+    // Throttle, auth o fallo de red: parar aquí. Si el 429 era solo de este
+    // endpoint, el scheduler sigue leyendo la lista sin contador.
     if (signal.severity !== 'ok' && signal.severity !== 'shape') {
       return { value: null, adapterId: a.id, signal, skipped };
     }
