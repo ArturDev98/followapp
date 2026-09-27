@@ -124,6 +124,7 @@ export interface CaptureProgress {
 export type Verdict =
   | 'left'      // la cuenta existe: se fue de verdad
   | 'gone'      // ya no existe: suspendida, eliminada o desactivada
+  | 'still'     // te sigue: la lectura se la saltó. No se guarda: vuelve al snapshot
   | 'unknown';  // no se pudo comprobar
 
 /** Ir y venir varias veces es un solo hecho, no una noticia por vuelta. */
@@ -159,6 +160,8 @@ export interface SnapshotRecord {
   removed: string[];
   /** Veredicto por cada id de `removed`. Ausente = nunca se comprobo. */
   verdicts?: Record<string, Verdict>;
+  /** Te seguían pero la lectura se los saltó: se devolvieron al snapshot. Es el dato 3. */
+  skipped?: string[];
   counts: Counts | null;
 }
 

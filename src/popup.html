@@ -272,6 +272,40 @@
 
     button:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    /* ---------------- novedades ---------------- */
+
+    /* Tapa el popup entero: sale una vez por versión y se cierra con un clic. */
+    .news {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      padding: 18px;
+      background: rgba(6, 12, 16, 0.78);
+      animation: news-in 0.18s ease;
+    }
+    .news[hidden] { display: none; }
+    /* El popup mide lo que su contenido: con la actividad vacía, el aviso no cabría. */
+    body:has(.news:not([hidden])) { min-height: 400px; }
+    @keyframes news-in { from { opacity: 0; } }
+    .news-card {
+      width: 100%; max-height: 100%; overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+      padding: 16px 18px 18px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    }
+    .news-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    .news-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+    .news-head .v { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+    .news ul { list-style: none; margin: 0 0 16px; padding: 0; }
+    .news li {
+      position: relative; padding-left: 16px; margin-bottom: 8px;
+      color: var(--ink-soft); font-size: 12.5px; line-height: 1.5;
+    }
+    .news li::before {
+      content: ''; position: absolute; left: 2px; top: 0.6em;
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+    }
+    .news .go { width: 100%; padding: 8px 12px; font-size: 13px; }
+
     /* Barra de progreso fina en el pie: informa sin explicar nada. */
     .bar { height: 2px; background: var(--rule); }
     .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.25s; }
@@ -353,6 +387,17 @@
   </footer>
 
   <div class="diag" id="diag" hidden></div>
+
+  <div class="news" id="news" role="dialog" aria-modal="true" aria-labelledby="news-title" hidden>
+    <div class="news-card">
+      <div class="news-head">
+        <h2 id="news-title"></h2>
+        <span class="v" id="news-version"></span>
+      </div>
+      <ul id="news-list"></ul>
+      <button class="go" type="button" id="news-ok"></button>
+    </div>
+  </div>
 
   <script type="module" src="./popup/popup.ts"></script>
 </body>

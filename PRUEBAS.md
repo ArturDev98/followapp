@@ -81,6 +81,10 @@ mandarlo automáticamente, y ese es justamente el argumento de venta.
 | `...: faltan demasiados` | Falta una página entera o más: ahí sí se descarta la lectura |
 | `bajas: N · M ya no existían` | **El dato 3**: cuántas de las bajas no eran bajas |
 | `rachas de ir y venir: N` | Cuentas que entran y salen: cuánto ruido quita el agrupado |
+| `saltos de lectura: N` | **La otra mitad del dato 3**: gente que te seguía y la lectura se saltó. Anotar el tamaño de la cuenta |
+| `... te siguen: la lectura se las saltó` | Lo mismo, en el momento en que pasa |
+| `Parada: ... sigue tras la espera` | Instagram frenó a mitad de lectura; se guardó lo leído. Anotar en qué página |
+| `lectura a medias caducada` | Una lectura troceada no se cerró en 12 h: cuenta grande con frenos seguidos |
 | `p95 X ms` en cada lectura | Sube respecto a la latencia base = Instagram está frenando |
 | `frenó N veces` | **El dato 1**: el gobernador aflojó. Anotar el tamaño de la cuenta |
 | `Se relee X en N min` | El suelo pospuso una lectura. Normal en cuentas grandes |
@@ -160,3 +164,47 @@ Hay evidencia de sobra del mismo ruido en la otra dirección: dos capturas
 manuales separadas por un minuto leyeron 107 y 106, y una de ellas anotó «el
 contador se movio de 107 a 106 durante la lectura». En una cuenta de 105
 seguidores el contador oscila ±1 constantemente.
+
+---
+
+## Lo que dejó · 27 sep 2026
+
+Diagnóstico de la cuenta del autor en **1.0.6**, sin contador desde el 24/9 a
+las 11:11 (`info/` cortado, ver `research/HALLAZGOS.md` §7). Poll cada hora;
+la cuenta pasó de 101 a **121 seguidores** y de 43 a 44 seguidos.
+
+### Cuántas veces se leyó la lista de verdad
+
+Cada lectura cuesta 7 peticiones (5 de seguidores y 2 de seguidos):
+
+| Día | Lecturas | Nota |
+|---|---|---|
+| 24/9 | al menos 1 (17:12) | las anteriores ya no caben en la bitácora |
+| 25/9 | 2 (10:35 y 14:12) | navegador cerrado desde media tarde |
+| 26/9 | 0 | navegador cerrado todo el día |
+| 27/9 | 1 (09:36) | barrido diario al arrancar |
+
+**Ni un 429 en la lista en tres días**, y p95 entre 283 y 758 ms con línea base
+de 284. Pero esto **no sube el dato 2**: lo que limita las lecturas es cuántas
+horas está abierto el navegador, no el suelo de 3 h. El máximo medido sigue
+siendo el del 18/9: 4 lecturas al día a 5 peticiones cada una.
+
+Al arrancar Chrome, la alarma que se perdió con el navegador cerrado suena fuera
+de hora (10:34 en vez de a y 12). La marca de lectura queda desalineada con el
+poll, y el intervalo real sale entre 3 y 4 h. No se toca: el error va hacia el
+lado prudente.
+
+### Lo que sí es nuevo
+
+- **El corte de `info/` no es pasajero.** Cuatro reintentos en tres días, todos
+  en 429, mientras la lista respondía 200 en todas las lecturas.
+- **Sin contador, la lectura se acepta sin referencia externa.** 101 → 121 se
+  aceptó porque leer de más nunca delata una paginación truncada. Hay que
+  confirmar en la app de Instagram que el perfil marca 121: es la primera
+  comprobación del modo sin contador contra la realidad.
+
+| Dato que bloquea S5 | Estado al 27/9 |
+|---|---|
+| Techo por encima de 3.750 seguidores | ❌ sin cuenta grande |
+| Enumeraciones diarias que aguanta una cuenta | ⚠️ sin cambios: 4 al día sigue siendo el máximo medido |
+| Bajas falsas por cuentas suspendidas | ⚠️ 1 de 2 el 24/9; sin bajas desde entonces, y sin `info/` saldrían sin confirmar |

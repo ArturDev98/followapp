@@ -11,6 +11,7 @@ import {
   tick,
 } from '../lib/scheduler';
 import { isBusy, setBusy } from '../lib/busy';
+import { CHANGELOG_PENDING_KEY } from '../lib/changelog';
 import type { Broadcast, HistoryResponse, Msg, ProblemCode, TickResponse } from '../lib/messages';
 
 /** Service worker: host de la captura, el almacenamiento y el scheduler. */
@@ -97,7 +98,13 @@ async function restore(): Promise<void> {
   if (!existing) await enable();
 }
 
-chrome.runtime.onInstalled.addListener(() => void restore());
+chrome.runtime.onInstalled.addListener((d) => {
+  // Solo al actualizar: en una instalación nueva ya está la bienvenida.
+  if (d.reason === 'update') {
+    void chrome.storage.local.set({ [CHANGELOG_PENDING_KEY]: chrome.runtime.getManifest().version });
+  }
+  void restore();
+});
 chrome.runtime.onStartup.addListener(() => void restore());
 
 // ----------------------------------------------------------------- historial

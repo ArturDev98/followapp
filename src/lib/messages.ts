@@ -34,6 +34,7 @@ export interface KindSummary {
   bases: number;
   lastAt: number | null;
   lastCount: number | null;
+  skipped: number;
 }
 
 export interface HistoryResponse {

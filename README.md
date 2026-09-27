@@ -28,12 +28,17 @@ npm run build
 
 Deja la extensión lista en `dist/`.
 
+Al publicar una versión: subir `version` en `public/manifest.json` y añadir su
+entrada en `src/lib/changelog.ts`, en español e inglés. Quien actualiza la ve
+una vez al abrir el popup; una instalación nueva no, porque ya tiene la bienvenida.
+
 | Script | Qué hace |
 |---|---|
 | `npm run build` | Popup + service worker |
 | `npm run dev` | Igual, en modo watch |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run clean` | Borra `dist/` |
+| `npm run package` | Compila y deja `store/followapp-<versión>.zip`; avisa si la versión no tiene novedades en `src/lib/changelog.ts` |
 
 ### Por qué hay tres configuraciones de Vite
 
@@ -77,6 +82,7 @@ fuera del manifest (ver *plan B*), así que construirlo sería malgastar bytes.
 | S4.8 | Enlace al perfil y el suelo explicado en el popup | ✅ v1.0.4 |
 | — | La reconciliación descartaba todas las lecturas de seguidores | ✅ v1.0.5 |
 | — | Sin contador, la extensión se quedaba parada para siempre | ✅ v1.0.6 |
+| — | Cuentas grandes, bajas comprobadas sin `info/` y novedades al actualizar | ✅ v1.0.7 |
 | S5 | Backend y cuentas | tras la semana de pruebas |
 
 Se publicó **no listada**: pasa la revisión completa y se instala por enlace,
@@ -600,10 +606,62 @@ suelo le quedan 5 min o menos; el botón no usa el margen.
 El diagnóstico imprime `contador: caído desde ...` mientras dura. Si aparece en
 los testers, el corte es general y no de una sola sesión.
 
+### 1.0.7 — Lo que una cuenta de 4.000 seguidores habría roto
+
+Sin una cuenta grande no se puede medir el techo de Instagram, pero sí se puede
+comprobar nuestro código a esa escala. Una simulación de 4.000 seguidores y 500
+seguidos, con Instagram, `chrome.*` e IndexedDB falsos, ejecutó por primera vez
+el camino de las lecturas troceadas, el que aparece a partir de ~1.475
+seguidores (`TICK_BUDGET` de 60 peticiones y páginas de 25). Tenía dos fallos
+graves:
+
+- **El barrido diario no se cerraba nunca con lecturas troceadas.** Solo se
+  apuntaba si las dos listas se leían en el mismo disparo, y las continuaciones
+  solo encolaban la lista a medias. Resultado: los 4.000 seguidores se releían
+  cada hora, unas **3.945 peticiones al día**, y los seguidos no se leían
+  jamás. Ahora el barrido se apunta por lista (`lastRead`), y tras cerrar la
+  lista a medias se pueden encolar otras en el mismo disparo. Quedan unas 380
+  peticiones el primer día y 215 los siguientes.
+- **Un 429 a mitad de lectura se trataba como «presupuesto agotado».**
+  `captureList` devuelve cursor en cualquier parada, y el scheduler lo tomaba
+  como «continúa en 2 min»: 31 intentos en una hora de freno. Ahora solo el
+  presupuesto reanuda en 2 min; un freno guarda lo leído y sigue tras la espera.
+
+Una revisión independiente del diff, con sus propias simulaciones, encontró más:
+
+- **Lo leído se tiraba al frenar.** Si Instagram limitara por volumen horario
+  (sin medir, HALLAZGOS §3), una cuenta de 4.000 no cerraría nunca una lectura.
+  Ahora se conserva; una lectura a medias caduca a las 12 h.
+- **Un cursor que deja de valer atascaba la extensión para siempre.** Un fallo
+  de forma en una continuación descarta la lectura a medias.
+- **Un contador que siempre marca de más** descartaba todas las lecturas y
+  releía la lista en cada poll: 4.000 páginas al día. Dos lecturas seguidas que
+  coinciden se aceptan, igual que sin contador.
+- **Un freno al comprobar bajas no cortaba el disparo**, y un 429 posterior
+  rebajaba una espera dura de 6 h a 35 min.
+
+**Las bajas se comprueban con `friendships/show`** (HALLAZGOS §8), porque
+`info/` está cortado para algunas sesiones. Da algo nuevo: `followed_by`. Si
+quien «se fue» te sigue, la lectura se lo saltó, y **vuelve al snapshot** en
+vez de pintarse como baja. La primera versión lo escondía en el popup, y la
+revisión demostró que así inventaba rachas de ir y venir y podía tapar una baja
+real para siempre. Devolverlo al snapshot corta el problema de raíz: no hay ni
+salida ni vuelta. Si alguien sale saltado en dos lecturas seguidas, ya no se
+devuelve: una grieta de paginación no se repite con la misma persona. El
+diagnóstico cuenta los saltos (`saltos de lectura: N`), la otra mitad del dato 3.
+
+**Y novedades al actualizar**, como en Chat Privacy Shield: un aviso en el popup
+una sola vez por versión, en español o inglés según el idioma elegido. Las
+entradas viven en `src/lib/changelog.ts`, y `npm run package` avisa si la
+versión no tiene la suya.
+
 ### Para la siguiente versión
 
 | Qué | Por qué queda fuera |
 |---|---|
+| Traer las simulaciones del scheduler al repo | Viven en un directorio temporal; el scheduler ha cambiado en tres versiones seguidas y merece pruebas que se puedan repetir |
+| Guardar en el diagnóstico los ms y el tipo de respuesta de cada 429 | Distinguiría un corte de endpoint de un freno de ritmo sin pedirle nada al tester |
+| El pie del popup sin contador | Dice «Próxima en 1 h» aunque ese poll no vaya a leer nada |
 | Reintentar los veredictos `unknown` en disparos posteriores con presupuesto sobrante | Mejora el dato 3, pero se pinta «sin confirmar», que ya es honesto |
 | El techo por encima de 3.750 seguidores | No es código: hace falta una cuenta grande que instale la extensión |
 

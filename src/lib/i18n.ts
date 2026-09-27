@@ -97,6 +97,8 @@ const es = {
   diag_chunks: '{n} en {c} tandas',
   test_suffix: ' · prueba',
   language: 'idioma',
+
+  news_ok: 'Entendido',
 } as const;
 
 type Catalog = Record<keyof typeof es, string>;
@@ -188,6 +190,8 @@ const en: Catalog = {
   diag_chunks: '{n} in {c} runs',
   test_suffix: ' · test',
   language: 'language',
+
+  news_ok: 'Got it',
 };
 
 const CATALOGS: Record<Locale, Catalog> = { es, en };

@@ -3,8 +3,8 @@ import { jitter, sleep } from './throttle';
 import type { Verdict } from './types';
 
 /**
- * Quien desaparece de la lista no siempre se ha ido: si la cuenta fue
- * suspendida o eliminada, llamarlo baja es mentir.
+ * Quien desaparece de la lista no siempre se ha ido: pudo ser suspendido, o la
+ * lectura se lo saltó. Llamarlo baja sería mentir.
  */
 
 export interface VerifyOpts {
@@ -37,7 +37,8 @@ export async function verifyRemovals(ids: string[], opts: VerifyOpts): Promise<V
     if (requests >= opts.budget) return { verdicts, requests, stopped: null, pending: ids.slice(i) };
     if (requests > 0) await sleep(jitter(opts.delayMs));
 
-    const res = await igFetch(`${IG_ORIGIN}/api/v1/users/${id}/info/`);
+    // No usa users/{id}/info/: desde el 24/9/2026 da 429 a alguna sesión (HALLAZGOS §7).
+    const res = await igFetch(`${IG_ORIGIN}/api/v1/friendships/show/${id}/`);
     requests++;
 
     // Aqui un 404 es la respuesta, no un fallo: esa cuenta ya no existe.
@@ -51,9 +52,9 @@ export async function verifyRemovals(ids: string[], opts: VerifyOpts): Promise<V
       return { verdicts, requests, stopped: signal, pending: ids.slice(i) };
     }
 
-    // 200 con perfil es la unica prueba de que la cuenta sigue viva.
-    const user = (res.body as { user?: unknown } | null)?.user;
-    verdicts[id] = signal.severity === 'ok' && user ? 'left' : 'unknown';
+    // followed_by dice si la baja es de verdad; cualquier otra forma queda en duda.
+    const fb = signal.severity === 'ok' ? (res.body as { followed_by?: unknown } | null)?.followed_by : undefined;
+    verdicts[id] = fb === false ? 'left' : fb === true ? 'still' : 'unknown';
   }
 
   return { verdicts, requests, stopped: null, pending: [] };
@@ -61,7 +62,7 @@ export async function verifyRemovals(ids: string[], opts: VerifyOpts): Promise<V
 
 /** Cuenta veredictos para la bitacora y el diagnostico. */
 export function tally(verdicts: Record<string, Verdict>): Record<Verdict, number> {
-  const out: Record<Verdict, number> = { left: 0, gone: 0, unknown: 0 };
+  const out: Record<Verdict, number> = { left: 0, gone: 0, still: 0, unknown: 0 };
   for (const v of Object.values(verdicts)) out[v]++;
   return out;
 }

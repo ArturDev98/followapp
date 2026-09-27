@@ -153,6 +153,36 @@ export async function appendSnapshot(
 }
 
 /**
+ * Devuelve al snapshot a quien la lectura se saltó: así no genera ni baja ni vuelta.
+ * Saltado también en la lectura anterior ya no es una grieta: esos no vuelven.
+ */
+export async function reinstate(id: number, previousId: number | null, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+
+  return tx([STORE_SNAPSHOTS], 'readwrite', async (t) => {
+    const store = t.objectStore(STORE_SNAPSHOTS);
+    const prev = previousId === null
+      ? undefined
+      : await req(store.get(previousId) as IDBRequest<SnapshotRecord | undefined>);
+    const rec = await req(store.get(id) as IDBRequest<SnapshotRecord | undefined>);
+    if (!rec) return [];
+
+    const antes = new Set(prev?.skipped ?? []);
+    const vuelven = ids.filter((x) => !antes.has(x) && rec.removed.includes(x));
+    if (vuelven.length === 0) return [];
+
+    const set = new Set(vuelven);
+    store.put({
+      ...rec,
+      removed: rec.removed.filter((x) => !set.has(x)),
+      ...(rec.ids ? { ids: [...rec.ids, ...vuelven] } : {}),
+      skipped: [...(rec.skipped ?? []), ...vuelven],
+    });
+    return vuelven;
+  });
+}
+
+/**
  * Anota que fue de cada baja. Va despues de cerrar el snapshot: comprobarlo
  * cuesta peticiones y el diff no puede esperar a eso.
  */
@@ -339,6 +369,8 @@ export async function summary(kind: SnapshotKind = 'followers'): Promise<{
   bases: number;
   lastAt: number | null;
   lastCount: number | null;
+  /** Gente que te seguía y alguna lectura se saltó. */
+  skipped: number;
 }> {
   const history = await listSnapshots(kind);
   const last = history[history.length - 1] ?? null;
@@ -349,5 +381,6 @@ export async function summary(kind: SnapshotKind = 'followers'): Promise<{
     bases: history.filter((s) => s.ids !== null).length,
     lastAt: last?.takenAt ?? null,
     lastCount: lastComplete?.id !== undefined ? reconstruct(history, lastComplete.id).size : null,
+    skipped: history.reduce((n, s) => n + (s.skipped?.length ?? 0), 0),
   };
 }

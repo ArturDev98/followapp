@@ -106,6 +106,19 @@ def comprobar() -> dict:
                     error(f"{que} en {f} — la Web Store rechaza código remoto")
     bien("sin código remoto")
 
+    # Sin entrada en el changelog, quien actualiza no ve qué cambió.
+    fuente = os.path.join(RAIZ, "src", "lib", "changelog.ts")
+    texto = io.open(fuente, encoding="utf-8").read() if os.path.isfile(fuente) else ""
+    entrada = re.search(rf"'{re.escape(v)}':\s*\{{(.*?)\n  \}},", texto, re.S)
+    if not entrada:
+        aviso(f"sin novedades para {v} en src/lib/changelog.ts: quien actualice no verá el aviso")
+    else:
+        faltan = [l for l in ("es", "en") if not re.search(rf"^\s*{l}:\s*\{{", entrada.group(1), re.M)]
+        if faltan:
+            aviso(f"novedades de {v} sin idioma: {', '.join(faltan)}")
+        else:
+            bien(f"novedades de {v} en es y en")
+
     mapas = [f for _, _, fs in os.walk(DIST) for f in fs if f.endswith(".map")]
     if mapas:
         aviso(f"{len(mapas)} source maps: se excluyen del zip para aligerarlo")

@@ -185,6 +185,9 @@ veredicto de las bajas (S4.6) asume **404** para suspendida, eliminada o
 desactivada, y **200 con perfil** para la que sigue viva. No está confirmado
 contra una cuenta suspendida real.
 
+Desde la 1.0.7 se comprueba con `friendships/show/{id}/` (ver §8), y el 404
+solo está probado contra un id que nunca existió.
+
 Si la suposición falla, el error cae del lado seguro por construcción: un 200
 con forma rara se marca `unknown` y se pinta «sin confirmar», nunca al revés.
 **Test**: guardar el id de una cuenta que se sepa suspendida y pedir ese
@@ -236,7 +239,57 @@ con el contador caído enseñaba «—». Probados con la misma sesión:
 `web_form_data` queda de respaldo: se pide una vez, solo a ciegas y solo si
 falta el nombre. Trae también correo y teléfono; se lee el nombre y nada más.
 
+**Al 27/9 sigue cortado.** Cuatro reintentos en tres días (24/9 17:12, 25/9
+10:34, 27/9 09:36), todos en 429. La lista respondió 200 en todas las lecturas
+de esos días.
+
 **Abierto:** si Meta está retirando `info/` del cliente web para todos (sería
 el segundo endpoint de contador que muere) o solo para algunas sesiones.
 El diagnóstico ya imprime `contador: caído desde ...`: si aparece en los
 testers, es general.
+
+---
+
+## 8. Comprobar bajas sin `users/{id}/info/` (27 sep 2026)
+
+Comprobar una baja usaba `info/`, cortado para la sesión del autor (§7). Con
+esa sesión, desde la consola de instagram.com:
+
+| Petición | Resultado |
+|---|---|
+| `friendships/show/{id}` · seguidor vivo | ✅ 200 · 930 ms · JSON con `followed_by`, `following`, `blocking`, `is_private`… |
+| `friendships/show/{id}` · id inexistente | ✅ 404 · 178 ms · `text/html` «Página no encontrada» |
+| `/{username}/` · seguidor vivo | 200 · título «Nombre (@usuario) • Fotos y vídeos» |
+| `/{username}/` · cuenta que ya no existe | 200 · título «Instagram» |
+| `/{username}/` · nombre inexistente | 200 · título «Instagram» |
+
+`friendships/show` es de la misma familia que la lista, que sigue viva, y va
+por id: un cambio de nombre no lo engaña. La página de perfil distingue solo
+por el título, y además falla con los cambios de nombre: el nombre antiguo
+parece una cuenta borrada. **Descartada.**
+
+`show` da algo que `info/` no daba: **`followed_by`**, que dice si esa persona
+te sigue ahora mismo. Así una baja se comprueba entera, no solo la cuenta:
+
+| Respuesta | Veredicto |
+|---|---|
+| 404 | `gone`: la cuenta ya no existe |
+| 200 · `followed_by: false` | `left`: se fue de verdad |
+| 200 · `followed_by: true` | **te sigue**; la lectura se la saltó y vuelve al snapshot |
+| cualquier otra cosa | `unknown` |
+
+`still` mide por primera vez las bajas falsas por paginación, la grieta que
+describe `research/probes/diagnose-person.js`. Es la otra mitad del dato 3.
+
+**Sin verificar:** el 404 se probó con un id que nunca existió. Una cuenta
+suspendida o desactivada podría responder distinto; se confirma con la primera
+baja real de ese tipo, porque el veredicto queda en la bitácora.
+
+Dos casos límite, razonados y sin probar:
+
+- **Quien te bloquea** probablemente da 404, igual que una cuenta borrada. Se
+  pintaría como «ya no existe» y no contaría como baja: una baja que se calla.
+- **Una cuenta desactivada** podría responder 200 con `followed_by: true`. Se
+  devolvería al snapshot como un salto de lectura. Por eso, si la misma persona
+  sale saltada en dos lecturas seguidas, deja de devolverse y queda como baja
+  sin confirmar: una grieta de paginación no se repite con la misma persona.

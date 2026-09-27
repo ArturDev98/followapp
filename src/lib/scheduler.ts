@@ -1,6 +1,6 @@
 import { readUserId, type Severity } from './http';
 import { captureCounts, captureList, captureUsername } from './capture';
-import { appendSnapshot, saveProfiles, setVerdicts, type AppendResult } from './snapshots';
+import { appendSnapshot, reinstate, saveProfiles, setVerdicts, type AppendResult } from './snapshots';
 import { tally, verifyRemovals } from './verify';
 import { getMeta, setMeta } from './db';
 import { KIND_LABEL, POLL_CHOICES, POLL_DEFAULT_MINUTES } from './types';
@@ -18,6 +18,9 @@ export const ALARM_RESUME = 'followapp:resume';
 
 /** Continuacion de una enumeracion troceada. Corto: hay trabajo a medias. */
 const RESUME_MINUTES = 2;
+
+/** Una lectura a medias más vieja que esto ya arrastra demasiado cambio: se empieza de cero. */
+const PENDING_MAX_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Tope por disparo. No lo impone Instagram sino el service worker, que Chrome
@@ -119,7 +122,10 @@ export interface SchedulerState {
   pollChosen?: boolean;
   lastCounts: Counts | null;
   lastPollAt: number | null;
+  /** Solo lo escribía la 1.0.6 y anteriores: ahora es respaldo de `lastRead`. */
   lastSweepAt: number | null;
+  /** Por lista: cuándo se leyó entera por última vez, se aceptara o no. */
+  lastRead: Partial<Record<SnapshotKind, number>>;
   /** Hasta cuando no se toca nada, tras un bloqueo. */
   blockedUntil: number | null;
   blockedReason: string | null;
@@ -152,6 +158,7 @@ const EMPTY: SchedulerState = {
   lastCounts: null,
   lastPollAt: null,
   lastSweepAt: null,
+  lastRead: {},
   blockedUntil: null,
   blockedReason: null,
   blockedKind: null,
@@ -372,19 +379,14 @@ async function verificarBajas(
   snap: AppendResult,
   budgetLeft: number,
   delayMs: number,
-  blind: boolean,
-): Promise<number> {
+): Promise<{ requests: number; stopped: boolean }> {
   const rec = snap.record;
-  if (rec.kind !== 'followers' || rec.id === undefined || rec.removed.length === 0) return 0;
-
-  // Comprobar usa el mismo endpoint que el contador: si está caído, quedan dudosas.
-  if (blind) {
-    await setVerdicts(rec.id, Object.fromEntries(rec.removed.map((id) => [id, 'unknown' as const])));
-    return 0;
+  if (rec.kind !== 'followers' || rec.id === undefined || rec.removed.length === 0) {
+    return { requests: 0, stopped: false };
   }
 
   const budget = Math.min(VERIFY_BUDGET, budgetLeft);
-  if (budget < 1) return 0;
+  if (budget < 1) return { requests: 0, stopped: false };
 
   const v = await verifyRemovals(rec.removed, { budget, delayMs });
 
@@ -392,11 +394,22 @@ async function verificarBajas(
   // como una baja segura, que es justo el error que esto viene a quitar.
   const verdicts = { ...v.verdicts };
   for (const id of v.pending) verdicts[id] = 'unknown';
-  await setVerdicts(rec.id, verdicts);
 
   const n = tally(verdicts);
+  const saltados = Object.keys(verdicts).filter((id) => verdicts[id] === 'still');
+  const vuelven = new Set(await reinstate(rec.id, snap.previousId, saltados));
+  // Saltado dos lecturas seguidas ya no parece una grieta: queda como baja dudosa.
+  for (const id of saltados) {
+    if (vuelven.has(id)) delete verdicts[id];
+    else verdicts[id] = 'unknown';
+  }
+  await setVerdicts(rec.id, verdicts);
+
   if (n.gone > 0) {
     await log(`${n.gone} de ${rec.removed.length} bajas eran cuentas que ya no existen`);
+  }
+  if (vuelven.size > 0) {
+    await log(`${vuelven.size} de ${rec.removed.length} bajas te siguen: la lectura se las saltó y vuelven a la lista`, 'warn');
   }
 
   if (v.stopped) {
@@ -409,7 +422,7 @@ async function verificarBajas(
     await log(`Comprobación de bajas detenida: ${v.stopped.reason}`, 'warn');
   }
 
-  return v.requests;
+  return { requests: v.requests, stopped: v.stopped !== null };
 }
 
 // ------------------------------------------------------------------- el tick
@@ -519,38 +532,53 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     from ? (kind === 'followers' ? from.followers : from.following) : null;
 
   // --- Que toca enumerar.
-  const sweepDue = !state.lastSweepAt || now - state.lastSweepAt >= SWEEP_EVERY_MS;
+  // Barrido por lista: uno global no se cerraba nunca si una lista se troceaba.
+  const sweepDue = (kind: SnapshotKind): boolean => {
+    const leida = state.lastRead?.[kind] ?? state.lastSweepAt;
+    return !leida || now - leida >= SWEEP_EVERY_MS;
+  };
   const queue: SnapshotKind[] = [];
+  let barrido = false;
 
   /** Listas que tocaban pero cuyo suelo aun no ha pasado. */
   const pospuesto: Postponed[] = [];
 
-  if (state.pending) {
-    // Lo a medias manda: hasta cerrarlo, no hay snapshot que valga.
-    queue.push(state.pending.kind);
-  } else if (sweepDue) {
+  if (state.pending && now - state.pending.startedAt > PENDING_MAX_MS) {
+    await log(`${KIND_LABEL[state.pending.kind]}: lectura a medias caducada, se empieza de cero`, 'warn');
+    await save({ pending: null });
+    state.pending = null;
+  }
+
+  // Lo a medias manda: hasta cerrarlo, no hay snapshot que valga.
+  if (state.pending) queue.push(state.pending.kind);
+
+  for (const kind of ['followers', 'following'] as const) {
+    if (queue.includes(kind)) continue;
+
     // El barrido no mira suelos: es la garantia de un dato al dia como minimo.
-    queue.push('followers', 'following');
-  } else {
-    for (const kind of ['followers', 'following'] as const) {
-      const mark = state.lastEnum?.[kind];
-      const count = blind ? mark?.count ?? null : contador(kind);
-      // A ciegas no se sabe si algo se movió: decide el suelo.
-      const movido = blind || !mark || mark.count !== count;
-
-      // Sin cambio de contador, solo el boton justifica releer la lista entera.
-      if (!movido && !opts.force) continue;
-
-      const suelo = blind && !opts.force
-        ? Math.max(BLIND_FLOOR_MIN_MS, floorFor(count, false))
-        : floorFor(count, Boolean(opts.force));
-      const espera = mark ? mark.at + suelo - now : 0;
-      if (espera > (opts.force ? 0 : FLOOR_SLACK_MS)) {
-        pospuesto.push({ kind, minutes: Math.ceil(espera / 60000) });
-        continue;
-      }
+    if (sweepDue(kind)) {
       queue.push(kind);
+      barrido = true;
+      continue;
     }
+
+    const mark = state.lastEnum?.[kind];
+    const count = blind ? mark?.count ?? null : contador(kind);
+    // A ciegas no se sabe si algo se movió: decide el suelo.
+    const movido = blind || !mark || mark.count !== count;
+
+    // Sin cambio de contador, solo el boton justifica releer la lista entera.
+    if (!movido && !opts.force) continue;
+
+    const suelo = blind && !opts.force
+      ? Math.max(BLIND_FLOOR_MIN_MS, floorFor(count, false))
+      : floorFor(count, Boolean(opts.force));
+    const espera = mark ? mark.at + suelo - now : 0;
+    if (espera > (opts.force ? 0 : FLOOR_SLACK_MS)) {
+      pospuesto.push({ kind, minutes: Math.ceil(espera / 60000) });
+      continue;
+    }
+    queue.push(kind);
   }
 
   const enPalabras = (): string =>
@@ -580,7 +608,7 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
 
   const why = state.pending
     ? 'continuación'
-    : sweepDue
+    : barrido
       ? 'barrido diario'
       : opts.force
         ? 'manual'
@@ -594,8 +622,6 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
 
   // --- Enumerar, respetando el presupuesto del disparo.
   const enumerated: SnapshotKind[] = [];
-  /** Listas leidas enteras, se aceptara el snapshot o no. */
-  const attempted: SnapshotKind[] = [];
   let baseline = state.baseline;
 
   for (const kind of queue) {
@@ -623,7 +649,8 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
     const merged = pend ? dedupe([...pend.ids, ...res.ids]) : res.ids;
 
     if (res.complete) {
-      attempted.push(kind);
+      // El barrido cuenta haberla leído, no que se aceptara: si no, se repetiría cada poll.
+      await save({ lastRead: { ...(await getState()).lastRead, [kind]: takenAt } });
       const chunks = (pend?.chunks ?? 0) + 1;
       const nombre = kind === 'followers' ? 'Seguidores' : 'Seguidos';
       const rec = blind
@@ -634,6 +661,13 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
           }
         : await reconcile(userId, kind, merged.length, contador(kind), username, TICK_BUDGET - requests);
       requests += rec.requests;
+
+      // Un contador que siempre marca de más descartaría todas las lecturas, y cada poll releería.
+      const corta = state.shortRead?.[kind];
+      if (!blind && !rec.ok && corta !== undefined && Math.abs(merged.length - corta) < SHORT_READ_MATCH) {
+        rec.ok = true;
+        rec.note = `${rec.note}; dos lecturas seguidas dan ${merged.length}: se acepta`;
+      }
 
       // Si el contador se movio durante la lectura, el bueno es el fresco.
       const snapCounts = rec.counts ?? counts;
@@ -678,12 +712,15 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
             (chunks > 1 ? ` · cerrado tras ${chunks} tandas` : '') +
             (rec.note ? ` · ${rec.note}` : ''),
         );
-        requests += await verificarBajas(snap, TICK_BUDGET - requests, res.stats.finalDelayMs, blind);
+        const vb = await verificarBajas(snap, TICK_BUDGET - requests, res.stats.finalDelayMs);
+        requests += vb.requests;
+        // Un freno al comprobar vale igual que uno al leer: seguir con la otra lista es insistir.
+        if (vb.stopped) break;
       } else {
-        if (blind) await save({ shortRead: { ...(await getState()).shortRead, [kind]: merged.length } });
+        await save({ shortRead: { ...(await getState()).shortRead, [kind]: merged.length } });
         await log(`${nombre}: descartado, ${rec.note}. Se reintenta en el próximo poll.`, 'warn');
       }
-    } else if (res.cursor) {
+    } else if (res.stopReason === 'budget' && res.cursor) {
       // Presupuesto agotado con la lista a medias: guardar y continuar luego.
       await save({
         pending: {
@@ -698,30 +735,31 @@ export async function tick(opts: TickOpts = {}): Promise<TickResult> {
       await scheduleResume();
       break;
     } else {
-      // Paro por bloqueo o error: no hay cursor con el que continuar.
+      // Paro por bloqueo o error: se guarda lo leído, pero sin reanudar en 2 min, que sería
+      // insistir; sigue el próximo poll tras la espera. Un fallo de forma es un cursor que ya no vale.
       const cd = cooldownFor(res.stopReason);
-      if (cd) {
-        await save({
-          blockedUntil: Date.now() + cd.ms,
-          blockedReason: cd.text,
-          blockedKind: cd.kind,
-          pending: null,
-        });
-        await log(`Parada: ${cd.text}`, res.stopReason === 'hard-block' ? 'bad' : 'warn');
-      } else {
-        await log(`Parada: ${res.detail}`, 'bad');
-      }
+      const sigue = res.stopReason !== 'no-adapter' && res.cursor !== null;
+      await save({
+        ...(cd ? { blockedUntil: Date.now() + cd.ms, blockedReason: cd.text, blockedKind: cd.kind } : {}),
+        pending: sigue
+          ? {
+              kind,
+              cursor: res.cursor!,
+              ids: merged,
+              startedAt: pend?.startedAt ?? takenAt,
+              chunks: (pend?.chunks ?? 0) + 1,
+            }
+          : null,
+      });
+      await log(
+        `Parada: ${cd?.text ?? res.detail}` + (sigue ? ` · ${merged.length} recogidos, sigue tras la espera` : ''),
+        res.stopReason === 'hard-block' || !cd ? 'bad' : 'warn',
+      );
       break;
     }
   }
 
-  const patch: Partial<SchedulerState> = { baseline };
-  // El barrido cuenta si se LEYERON las dos listas. Atarlo a que ademas se
-  // aceptaran dejaba `sweepDue` encendido para siempre en cuanto una fallaba:
-  // cada poll se convertia en un barrido completo y los suelos no pintaban nada.
-  if (attempted.length === 2) patch.lastSweepAt = Date.now();
-
-  return { ran: true, requests, enumerated, postponed: pospuesto, state: await save(patch) };
+  return { ran: true, requests, enumerated, postponed: pospuesto, state: await save({ baseline }) };
 }
 
 function dedupe(ids: string[]): string[] {

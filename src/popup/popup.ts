@@ -3,6 +3,7 @@ import type { ChangeEvent, Profile, Relations } from '../lib/types';
 import { KIND_LABEL, POLL_CHOICES } from '../lib/types';
 import { initials, releaseAvatars, resolveAvatar } from '../lib/avatars';
 import { LOCALES, initLocale, locale, setLocale, t, type Locale } from '../lib/i18n';
+import { CHANGELOG_PENDING_KEY, novedadesDe, type Novedades } from '../lib/changelog';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -451,6 +452,9 @@ function diagText(h: HistoryResponse): string {
   }
   const rachas = (h.changes ?? []).filter((c) => c.cycle).length;
   if (rachas) L.push(`rachas de ir y venir: ${rachas}`);
+  // La otra mitad del dato 3: bajas que no lo eran porque la lectura se saltó a alguien.
+  const saltos = h.summary?.followers.skipped ?? 0;
+  if (saltos) L.push(`saltos de lectura: ${saltos} · te seguían y la lista no los trajo`);
 
   if (s?.baseline) L.push(`latencia base: ${s.baseline} ms`);
   if (s?.pending) {
@@ -683,8 +687,55 @@ window.addEventListener('pagehide', () => {
   releaseAvatars();
 });
 
+// ------------------------------------------------------------- novedades
+
+const news = $('news');
+
+function cerrarNovedades(): void {
+  news.hidden = true;
+}
+
+function mostrarNovedades(version: string, n: Novedades): void {
+  $('news-title').textContent = n.title;
+  $('news-version').textContent = `v${version}`;
+  const lista = $('news-list');
+  lista.replaceChildren(
+    ...n.items.map((item) => {
+      const li = document.createElement('li');
+      li.textContent = item;
+      return li;
+    }),
+  );
+  const ok = $<HTMLButtonElement>('news-ok');
+  ok.textContent = t('news_ok');
+  news.hidden = false;
+  ok.focus();
+}
+
+$('news-ok').addEventListener('click', cerrarNovedades);
+news.addEventListener('click', (e) => {
+  if (e.target === news) cerrarNovedades();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !news.hidden) cerrarNovedades();
+});
+
+/** Una vez por versión. Se borra antes de enseñarla: mejor perder el aviso que repetirlo en bucle. */
+async function novedadesPendientes(): Promise<void> {
+  try {
+    const version = (await chrome.storage.local.get(CHANGELOG_PENDING_KEY))[CHANGELOG_PENDING_KEY];
+    if (typeof version !== 'string') return;
+    await chrome.storage.local.remove(CHANGELOG_PENDING_KEY);
+    const n = novedadesDe(version, locale());
+    if (n) mostrarNovedades(version, n);
+  } catch {
+    /* sin storage no hay aviso, y no pasa nada */
+  }
+}
+
 void (async () => {
   await initLocale();
   applyLabels();
   await refresh();
+  await novedadesPendientes();
 })();
